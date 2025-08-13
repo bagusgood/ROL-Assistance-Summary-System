@@ -99,8 +99,8 @@ def download_excel():
         df_ISR['Frekuensi'] = pd.to_numeric(df_ISR['Frekuensi'], errors='coerce')
 
         # Siapkan df API
-        freq_df1 = filt.groupby(['observasi_frekuensi', 'observasi_nama']).size().reset_index(name='Jumlah_df1')
-        freq_df1 = freq_df1.rename(columns={'observasi_frekuensi': 'Frekuensi', 'observasi_nama': 'Identifikasi'})
+        freq_df1 = filt.groupby(['observasi_frekuensi', 'observasi_sims_client_name']).size().reset_index(name='Jumlah_df1')
+        freq_df1 = freq_df1.rename(columns={'observasi_frekuensi': 'Frekuensi', 'observasi_sims_client_name': 'Identifikasi'})
 
         # Siapkan df ISR
         freq_df2 = df_ISR.groupby(['Frekuensi', 'Identifikasi']).size().reset_index(name='Jumlah_df2')
@@ -572,6 +572,7 @@ def index():
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=1346)
+
 
 
 
