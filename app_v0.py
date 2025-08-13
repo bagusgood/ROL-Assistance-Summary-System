@@ -311,15 +311,6 @@ def index():
     if filt.empty:
         return f"<h3>Data kosong untuk kombinasi tersebut.</h3><p>SPT: {selected_spt}, Kab: {selected_kab}, Kec: {selected_kec}</p>"
 
-    # Lanjutkan proses olah data dan render template
-    return render_template_string(
-        spt_options=spt_options, kab_options=kab_options,
-        kec_options=kec_options, cat_options=cat_options,
-        selected_spt=selected_spt, selected_kab=selected_kab,
-        selected_kec=selected_kec, selected_cat=selected_cat,
-        # tambahkan variabel lain sesuai kebutuhan template
-    )
-
     # Chart
     pie1 = px.pie(filt, names="observasi_status_identifikasi_name", title="Distribusi Legalitas")
     pie_band = px.pie(filt, names="band_nama", title="Distribusi Band")
@@ -683,6 +674,7 @@ def get_cat(spt, kab, kec):
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=1346)
+
 
 
 
