@@ -384,6 +384,7 @@ def index():
             }
         </style>
     </head>
+    
     <script>
     function updateKab() {
         let spt = document.getElementById("spt").value;
@@ -430,6 +431,7 @@ def index():
             });
     }
     </script>
+
 
     <body>
     <div class="header-banner">
@@ -541,38 +543,58 @@ def index():
         }
     </style>
 
-    <select name="spt" id="spt" onchange="updateKab()">
-        {% for spt in spt_options %}
-        <option value="{{spt}}" {% if spt == selected_spt %}selected{% endif %}>{{spt}}</option>
-        {% endfor %}
-    </select>
+    <!-- Form utama -->
+    <form method="POST" class="filter-form">
+        <div class="filter-group">
+            <label for="spt">No SPT</label>
+            <select name="spt" id="spt" onchange="updateKab()">
+                {% for spt in spt_options %}
+                <option value="{{spt}}" {% if spt == selected_spt %}selected{% endif %}>{{spt}}</option>
+                {% endfor %}
+            </select>
+        </div>
     
-    <select name="kab" id="kab" onchange="updateKec()">
-        {% for kab in kab_options %}
-        <option value="{{kab}}" {% if kab == selected_kab %}selected{% endif %}>{{kab}}</option>
-        {% endfor %}
-    </select>
+        <div class="filter-group">
+            <label for="kab">Kab/Kota</label>
+            <select name="kab" id="kab" onchange="updateKec()">
+                {% for kab in kab_options %}
+                <option value="{{kab}}" {% if kab == selected_kab %}selected{% endif %}>{{kab}}</option>
+                {% endfor %}
+            </select>
+        </div>
     
-    <select name="kec" id="kec" onchange="updateCat()">
-        {% for kec in kec_options %}
-        <option value="{{kec}}" {% if kec == selected_kec %}selected{% endif %}>{{kec}}</option>
-        {% endfor %}
-    </select>
+        <div class="filter-group">
+            <label for="kec">Kecamatan</label>
+            <select name="kec" id="kec" onchange="updateCat()">
+                {% for kec in kec_options %}
+                <option value="{{kec}}" {% if kec == selected_kec %}selected{% endif %}>{{kec}}</option>
+                {% endfor %}
+            </select>
+        </div>
     
-    <select name="cat" id="cat">
-        {% for cat in cat_options %}
-        <option value="{{cat}}" {% if cat == selected_cat %}selected{% endif %}>{{cat}}</option>
-        {% endfor %}
-    </select>
-
-
-    <!-- Form Unduh (terpisah) -->
+        <div class="filter-group">
+            <label for="cat">Catatan</label>
+            <select name="cat" id="cat">
+                {% for cat in cat_options %}
+                <option value="{{cat}}" {% if cat == selected_cat %}selected{% endif %}>{{cat}}</option>
+                {% endfor %}
+            </select>
+        </div>
+    
+        <div class="filter-buttons">
+            <button type="submit">🔍 Tampilkan</button>
+            <button form="excel-form" type="submit">⬇️ Unduh Rekap</button>
+        </div>
+    </form>
+    
+    <!-- Form Unduh Rekap -->
     <form method="POST" action="/download_excel" id="excel-form" style="display:none;">
         <input type="hidden" name="spt" value="{{ selected_spt }}">
         <input type="hidden" name="kab" value="{{ selected_kab }}">
         <input type="hidden" name="kec" value="{{ selected_kec }}">
         <input type="hidden" name="cat" value="{{ selected_cat }}">
     </form>
+
 
     <!-- Charts -->
     <div class="chart" id="bar1_pita"></div>
@@ -631,6 +653,7 @@ def get_cat(spt, kab, kec):
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=1346)
+
 
 
 
