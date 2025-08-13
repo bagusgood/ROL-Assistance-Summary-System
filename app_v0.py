@@ -49,7 +49,7 @@ def download_excel():
 
     # Transformasi jenis identifikasi
     df["observasi_status_identifikasi_name"] = df["observasi_status_identifikasi_name"].str.replace(
-        "OFF AIR \(Sedang Tidak Digunakan\)", "OFF AIR", regex=True
+        r"OFF AIR \(Sedang Tidak Digunakan\)", "OFF AIR", regex=True
     )
     df['jenis'] = df['observasi_status_identifikasi_name'].apply(
         lambda x: 'Belum Teridentifikasi' if x == 'BELUM DIKETAHUI' else 'Teridentifikasi'
@@ -546,4 +546,5 @@ def index():
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=1346)
+
 
