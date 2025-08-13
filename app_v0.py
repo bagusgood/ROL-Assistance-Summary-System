@@ -384,6 +384,53 @@ def index():
             }
         </style>
     </head>
+    <script>
+    function updateKab() {
+        let spt = document.getElementById("spt").value;
+        fetch(`/get_kab/${encodeURIComponent(spt)}`)
+            .then(res => res.json())
+            .then(data => {
+                let kabSelect = document.getElementById("kab");
+                kabSelect.innerHTML = '<option value="Semua">Semua</option>';
+                data.kab_list.forEach(k => {
+                    kabSelect.innerHTML += `<option value="${k}">${k}</option>`;
+                });
+                document.getElementById("kec").innerHTML = '<option value="Semua">Semua</option>';
+                document.getElementById("cat").innerHTML = '<option value="Semua">Semua</option>';
+            });
+    }
+    
+    function updateKec() {
+        let spt = document.getElementById("spt").value;
+        let kab = document.getElementById("kab").value;
+        fetch(`/get_kec/${encodeURIComponent(spt)}/${encodeURIComponent(kab)}`)
+            .then(res => res.json())
+            .then(data => {
+                let kecSelect = document.getElementById("kec");
+                kecSelect.innerHTML = '<option value="Semua">Semua</option>';
+                data.kec_list.forEach(k => {
+                    kecSelect.innerHTML += `<option value="${k}">${k}</option>`;
+                });
+                document.getElementById("cat").innerHTML = '<option value="Semua">Semua</option>';
+            });
+    }
+    
+    function updateCat() {
+        let spt = document.getElementById("spt").value;
+        let kab = document.getElementById("kab").value;
+        let kec = document.getElementById("kec").value;
+        fetch(`/get_cat/${encodeURIComponent(spt)}/${encodeURIComponent(kab)}/${encodeURIComponent(kec)}`)
+            .then(res => res.json())
+            .then(data => {
+                let catSelect = document.getElementById("cat");
+                catSelect.innerHTML = '<option value="Semua">Semua</option>';
+                data.cat_list.forEach(c => {
+                    catSelect.innerHTML += `<option value="${c}">${c}</option>`;
+                });
+            });
+    }
+    </script>
+
     <body>
     <div class="header-banner">
         <img src="/static/logo-komdigi.png" alt="Logo Kominfo" class="logo-img">
@@ -494,49 +541,30 @@ def index():
         }
     </style>
 
-    <!-- Form utama -->
-    <form method="POST" class="filter-form">
-        <div class="filter-group">
-            <label for="spt">No SPT</label>
-            <select name="spt" id="spt">
-                {% for spt in spt_options %}
-                <option value="{{spt}}" {% if spt == selected_spt %}selected{% endif %}>{{spt}}</option>
-                {% endfor %}
-            </select>
-        </div>
+    <select name="spt" id="spt" onchange="updateKab()">
+        {% for spt in spt_options %}
+        <option value="{{spt}}" {% if spt == selected_spt %}selected{% endif %}>{{spt}}</option>
+        {% endfor %}
+    </select>
+    
+    <select name="kab" id="kab" onchange="updateKec()">
+        {% for kab in kab_options %}
+        <option value="{{kab}}" {% if kab == selected_kab %}selected{% endif %}>{{kab}}</option>
+        {% endfor %}
+    </select>
+    
+    <select name="kec" id="kec" onchange="updateCat()">
+        {% for kec in kec_options %}
+        <option value="{{kec}}" {% if kec == selected_kec %}selected{% endif %}>{{kec}}</option>
+        {% endfor %}
+    </select>
+    
+    <select name="cat" id="cat">
+        {% for cat in cat_options %}
+        <option value="{{cat}}" {% if cat == selected_cat %}selected{% endif %}>{{cat}}</option>
+        {% endfor %}
+    </select>
 
-        <div class="filter-group">
-            <label for="kab">Kab/Kota</label>
-            <select name="kab" id="kab">
-                {% for kab in kab_options %}
-                <option value="{{kab}}" {% if kab == selected_kab %}selected{% endif %}>{{kab}}</option>
-                {% endfor %}
-            </select>
-        </div>
-
-        <div class="filter-group">
-            <label for="kec">Kecamatan</label>
-            <select name="kec" id="kec">
-                {% for kec in kec_options %}
-                <option value="{{kec}}" {% if kec == selected_kec %}selected{% endif %}>{{kec}}</option>
-                {% endfor %}
-            </select>
-        </div>
-
-        <div class="filter-group">
-            <label for="cat">Catatan</label>
-            <select name="cat" id="cat">
-                {% for cat in cat_options %}
-                <option value="{{cat}}" {% if cat == selected_cat %}selected{% endif %}>{{cat}}</option>
-                {% endfor %}
-            </select>
-        </div>
-
-        <div class="filter-buttons">
-            <button type="submit">🔍 Tampilkan</button>
-            <button form="excel-form" type="submit">⬇️ Unduh Rekap</button>
-        </div>
-    </form>
 
     <!-- Form Unduh (terpisah) -->
     <form method="POST" action="/download_excel" id="excel-form" style="display:none;">
@@ -569,9 +597,41 @@ def index():
     spt_options=spt_options, kab_options=kab_options, kec_options=kec_options, cat_options=cat_options,
     selected_spt=selected_spt, selected_kab=selected_kab, selected_kec=selected_kec, selected_cat=selected_cat,
     pie1_json=pie1_json, pie_band_json=pie_band_json, bar1_json=bar1_json, bar1_pita_json=bar1_pita_json)
+    
+@app.route("/get_kab/<spt>")
+def get_kab(spt):
+    df = load_data()
+    if spt != "Semua":
+        df = df[df["observasi_no_spt"] == spt]
+    kab_options = sorted(df["observasi_kota_nama"].dropna().unique().tolist())
+    return {"kab_list": kab_options}
+
+@app.route("/get_kec/<spt>/<kab>")
+def get_kec(spt, kab):
+    df = load_data()
+    if spt != "Semua":
+        df = df[df["observasi_no_spt"] == spt]
+    if kab != "Semua":
+        df = df[df["observasi_kota_nama"] == kab]
+    kec_options = sorted(df["observasi_kecamatan_nama"].dropna().unique().tolist())
+    return {"kec_list": kec_options}
+
+@app.route("/get_cat/<spt>/<kab>/<kec>")
+def get_cat(spt, kab, kec):
+    df = load_data()
+    if spt != "Semua":
+        df = df[df["observasi_no_spt"] == spt]
+    if kab != "Semua":
+        df = df[df["observasi_kota_nama"] == kab]
+    if kec != "Semua":
+        df = df[df["observasi_kecamatan_nama"] == kec]
+    cat_options = sorted(df["scan_catatan"].dropna().unique().tolist())
+    return {"cat_list": cat_options}
+
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=1346)
+
 
 
 
