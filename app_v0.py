@@ -313,7 +313,7 @@ def index():
 
     # Lanjutkan proses olah data dan render template
     return render_template_string(
-        TEMPLATE,
+        "index.html",
         spt_options=spt_options, kab_options=kab_options,
         kec_options=kec_options, cat_options=cat_options,
         selected_spt=selected_spt, selected_kab=selected_kab,
@@ -684,6 +684,7 @@ def get_cat(spt, kab, kec):
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=1346)
+
 
 
 
