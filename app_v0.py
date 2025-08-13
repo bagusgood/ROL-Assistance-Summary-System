@@ -269,42 +269,35 @@ def index():
     if df.empty:
         return "Data tidak tersedia. Periksa koneksi API atau cookie."
 
-    # Semua opsi SPT + "Semua"
-    spt_options = df["observasi_no_spt"].dropna().unique().tolist()
-    spt_options.insert(0, "Semua")
+    # Ambil pilihan dari form
     selected_spt = request.form.get("spt", "Semua")
-
-    # Filter kab berdasarkan SPT
-    if selected_spt == "Semua":
-        df_spt = df.copy()
-    else:
-        df_spt = df[df["observasi_no_spt"] == selected_spt]
-
-    kab_options = df_spt["observasi_kota_nama"].dropna().unique().tolist()
-    kab_options.insert(0, "Semua")
     selected_kab = request.form.get("kab", "Semua")
-
-    # Filter kec berdasarkan kab
-    if selected_kab == "Semua":
-        df_kab = df_spt.copy()
-    else:
-        df_kab = df_spt[df_spt["observasi_kota_nama"] == selected_kab]
-
-    kec_options = df_kab["observasi_kecamatan_nama"].dropna().unique().tolist()
-    kec_options.insert(0, "Semua")
     selected_kec = request.form.get("kec", "Semua")
-
-    # Filter cat berdasarkan kec
-    if selected_kec == "Semua":
-        df_kec = df_kab.copy()
-    else:
-        df_kec = df_kab[df_kab["scan_catatan"] == selected_kec]
-        
-    cat_options = df_kec["scan_catatan"].dropna().unique().tolist()
-    cat_options.insert(0, "Semua")
     selected_cat = request.form.get("cat", "Semua")
-    
-    # Filter akhir untuk grafik
+
+    # ===== Filter bertingkat =====
+    if selected_spt != "Semua":
+        df_spt = df[df["observasi_no_spt"] == selected_spt]
+    else:
+        df_spt = df
+
+    if selected_kab != "Semua":
+        df_kab = df_spt[df_spt["observasi_kota_nama"] == selected_kab]
+    else:
+        df_kab = df_spt
+
+    if selected_kec != "Semua":
+        df_kec = df_kab[df_kab["observasi_kecamatan_nama"] == selected_kec]
+    else:
+        df_kec = df_kab
+
+    # ===== Dropdown options =====
+    spt_options = ["Semua"] + sorted(df["observasi_no_spt"].dropna().unique().tolist())
+    kab_options = ["Semua"] + sorted(df_spt["observasi_kota_nama"].dropna().unique().tolist())
+    kec_options = ["Semua"] + sorted(df_kab["observasi_kecamatan_nama"].dropna().unique().tolist())
+    cat_options = ["Semua"] + sorted(df_kec["scan_catatan"].dropna().unique().tolist())
+
+    # ===== Filter akhir untuk tampilan data =====
     filt = df.copy()
     if selected_spt != "Semua":
         filt = filt[filt["observasi_no_spt"] == selected_spt]
@@ -312,9 +305,21 @@ def index():
         filt = filt[filt["observasi_kota_nama"] == selected_kab]
     if selected_kec != "Semua":
         filt = filt[filt["observasi_kecamatan_nama"] == selected_kec]
+    if selected_cat != "Semua":
+        filt = filt[filt["scan_catatan"] == selected_cat]
 
     if filt.empty:
         return f"<h3>Data kosong untuk kombinasi tersebut.</h3><p>SPT: {selected_spt}, Kab: {selected_kab}, Kec: {selected_kec}</p>"
+
+    # Lanjutkan proses olah data dan render template
+    return render_template_string(
+        TEMPLATE,
+        spt_options=spt_options, kab_options=kab_options,
+        kec_options=kec_options, cat_options=cat_options,
+        selected_spt=selected_spt, selected_kab=selected_kab,
+        selected_kec=selected_kec, selected_cat=selected_cat,
+        # tambahkan variabel lain sesuai kebutuhan template
+    )
 
     # Chart
     pie1 = px.pie(filt, names="observasi_status_identifikasi_name", title="Distribusi Legalitas")
@@ -679,6 +684,7 @@ def get_cat(spt, kab, kec):
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=1346)
+
 
 
 
