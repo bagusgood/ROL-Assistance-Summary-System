@@ -85,31 +85,57 @@ def download_excel():
     dinas = filt.pivot_table(index=['observasi_kota_nama', 'observasi_service_name', 'jenis'], aggfunc='size', fill_value=0)
     pita = filt.pivot_table(index=['observasi_kota_nama', 'observasi_range_frekuensi', 'observasi_status_identifikasi_name'], aggfunc='size', fill_value=0)
 
-    # Perhitungan tambahan: Identifikasi dan kesesuaian dengan ISR
     try:
-        # Load dan sesuaikan nama kolom dari file ISR
+        # Load dan rename kolom ISR
         df_ISR = pd.read_csv("Data Target Monitor ISR 2025 - Mataram.csv", on_bad_lines='skip', delimiter=';')
-        # Rename kolom dari df_ISR
-        df2 = df_ISR.rename(columns={'Freq': 'Frekuensi', 'Clnt Name': 'Identifikasi'})
-        
-        # Konversi 'Frekuensi' di kedua dataframe ke float64
+        df_ISR = df_ISR.rename(columns={'Freq': 'Frekuensi', 'Clnt Name': 'Identifikasi'})
+
+        # Filter ISR sesuai selected_kab (jika tidak "Semua")
+        if selected_kab != "Semua":
+            df_ISR = df_ISR[df_ISR['Kab/Kota'].astype(str).str.strip().str.upper() == selected_kab.strip().upper()]
+
+        # Pastikan tipe frekuensi sama
         filt['observasi_frekuensi'] = pd.to_numeric(filt['observasi_frekuensi'], errors='coerce')
-        df2['Frekuensi'] = pd.to_numeric(df2['Frekuensi'], errors='coerce')
-        
-        # Siapkan freq_df1 dari API
-        freq_df1 = filt.groupby(['observasi_frekuensi', 'observasi_sims_client_name']).size().reset_index(name='Jumlah_df1')
-        freq_df1 = freq_df1.rename(columns={'observasi_frekuensi': 'Frekuensi', 'observasi_sims_client_name': 'Identifikasi'})
-        
-        # freq_df2 dari ISR
-        freq_df2 = df2.groupby(['Frekuensi', 'Identifikasi']).size().reset_index(name='Jumlah_df2')
-        
-        # Sekarang merge
+        df_ISR['Frekuensi'] = pd.to_numeric(df_ISR['Frekuensi'], errors='coerce')
+
+        # Siapkan df API
+        freq_df1 = filt.groupby(['observasi_frekuensi', 'observasi_nama']).size().reset_index(name='Jumlah_df1')
+        freq_df1 = freq_df1.rename(columns={'observasi_frekuensi': 'Frekuensi', 'observasi_nama': 'Identifikasi'})
+
+        # Siapkan df ISR
+        freq_df2 = df_ISR.groupby(['Frekuensi', 'Identifikasi']).size().reset_index(name='Jumlah_df2')
+
+        # Merge untuk hitung kesesuaian
         merged = pd.merge(freq_df1, freq_df2, on=['Frekuensi', 'Identifikasi'], how='inner')
         jumlah_sesuai_isr = len(merged)
-        print("Jumlah cocok:", jumlah_sesuai_isr)
+
+        # ===== Hitung Persentase Target ISR =====
+        try:
+            df_target_kota = pd.read_csv("target_kota.csv", delimiter=';', on_bad_lines='skip')
+            df_target_kota['Kab/Kota'] = df_target_kota['Kab/Kota'].astype(str).str.strip().str.upper()
+
+            if selected_kab != "Semua":
+                target_match = df_target_kota[df_target_kota['Kab/Kota'] == selected_kab.strip().upper()]
+                if not target_match.empty:
+                    jumlah_target_isr = int(target_match['Jumlah ISR'].iloc[0])
+                    persen_sesuai_isr = round((jumlah_sesuai_isr / jumlah_target_isr * 100), 2)
+                else:
+                    jumlah_target_isr = 0
+                    persen_sesuai_isr = 0
+            else:
+                jumlah_target_isr = 0
+                persen_sesuai_isr = 0
+        except Exception as e:
+            print("Gagal hitung persen target ISR:", e)
+            jumlah_target_isr = 0
+            persen_sesuai_isr = 0
+    
     except Exception as e:
         print("Gagal menghitung kesesuaian dengan ISR:", e)
         jumlah_sesuai_isr = 0
+        jumlah_target_isr = 0
+        persen_sesuai_isr = 0
+
 
     # Baca file target_kota.csv dan cocokkan jumlah target ISR untuk kabupaten tersebut
     try:
@@ -546,5 +572,6 @@ def index():
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=1346)
+
 
 
