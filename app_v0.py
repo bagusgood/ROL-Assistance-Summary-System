@@ -386,51 +386,45 @@ def index():
     </head>
     
     <script>
-    function updateKab() {
-        let spt = document.getElementById("spt").value;
-        fetch(`/get_kab/${encodeURIComponent(spt)}`)
-            .then(res => res.json())
-            .then(data => {
-                let kabSelect = document.getElementById("kab");
-                kabSelect.innerHTML = '<option value="Semua">Semua</option>';
-                data.kab_list.forEach(k => {
-                    kabSelect.innerHTML += `<option value="${k}">${k}</option>`;
-                });
-                document.getElementById("kec").innerHTML = '<option value="Semua">Semua</option>';
-                document.getElementById("cat").innerHTML = '<option value="Semua">Semua</option>';
-            });
+    function syncExcelForm() {
+      document.getElementById('excel-spt').value = document.getElementById('spt').value;
+      document.getElementById('excel-kab').value = document.getElementById('kab').value;
+      document.getElementById('excel-kec').value = document.getElementById('kec').value;
+      document.getElementById('excel-cat').value = document.getElementById('cat').value;
     }
     
-    function updateKec() {
-        let spt = document.getElementById("spt").value;
-        let kab = document.getElementById("kab").value;
-        fetch(`/get_kec/${encodeURIComponent(spt)}/${encodeURIComponent(kab)}`)
-            .then(res => res.json())
-            .then(data => {
-                let kecSelect = document.getElementById("kec");
-                kecSelect.innerHTML = '<option value="Semua">Semua</option>';
-                data.kec_list.forEach(k => {
-                    kecSelect.innerHTML += `<option value="${k}">${k}</option>`;
-                });
-                document.getElementById("cat").innerHTML = '<option value="Semua">Semua</option>';
-            });
+    function autoSubmit(level) {
+      const form = document.getElementById('main-form');
+      const spt = document.getElementById('spt');
+      const kab = document.getElementById('kab');
+      const kec = document.getElementById('kec');
+      const cat = document.getElementById('cat');
+    
+      // Reset bertingkat & kunci dropdown berikutnya
+      if (level === 'spt') {
+        kab.selectedIndex = 0; kab.disabled = false;
+        kec.selectedIndex = 0; kec.disabled = true;
+        cat.selectedIndex = 0; cat.disabled = true;
+      } else if (level === 'kab') {
+        kec.selectedIndex = 0; kec.disabled = false;
+        cat.selectedIndex = 0; cat.disabled = true;
+      } else if (level === 'kec') {
+        cat.selectedIndex = 0; cat.disabled = false;
+      }
+    
+      // Sinkron nilai ke form Excel
+      syncExcelForm();
+    
+      // Auto-submit untuk refresh data di server
+      // requestSubmit() akan hormati type & constraints, fallback ke submit()
+      if (form.requestSubmit) form.requestSubmit();
+      else form.submit();
     }
     
-    function updateCat() {
-        let spt = document.getElementById("spt").value;
-        let kab = document.getElementById("kab").value;
-        let kec = document.getElementById("kec").value;
-        fetch(`/get_cat/${encodeURIComponent(spt)}/${encodeURIComponent(kab)}/${encodeURIComponent(kec)}`)
-            .then(res => res.json())
-            .then(data => {
-                let catSelect = document.getElementById("cat");
-                catSelect.innerHTML = '<option value="Semua">Semua</option>';
-                data.cat_list.forEach(c => {
-                    catSelect.innerHTML += `<option value="${c}">${c}</option>`;
-                });
-            });
-    }
+    // Saat halaman pertama kali dimuat, pastikan form Excel tersinkron
+    document.addEventListener('DOMContentLoaded', syncExcelForm);
     </script>
+
 
 
     <body>
@@ -544,57 +538,62 @@ def index():
     </style>
 
     <!-- Form utama -->
-    <form method="POST" class="filter-form">
-        <div class="filter-group">
-            <label for="spt">No SPT</label>
-            <select name="spt" id="spt" onchange="updateKab()">
-                {% for spt in spt_options %}
-                <option value="{{spt}}" {% if spt == selected_spt %}selected{% endif %}>{{spt}}</option>
-                {% endfor %}
-            </select>
-        </div>
+    <form method="POST" class="filter-form" id="main-form">
+      <div class="filter-group">
+        <label for="spt">No SPT</label>
+        <select name="spt" id="spt" onchange="autoSubmit('spt')">
+          {% for spt in spt_options %}
+          <option value="{{ spt }}" {% if spt == selected_spt %}selected{% endif %}>{{ spt }}</option>
+          {% endfor %}
+        </select>
+      </div>
     
-        <div class="filter-group">
-            <label for="kab">Kab/Kota</label>
-            <select name="kab" id="kab" onchange="updateKec()">
-                {% for kab in kab_options %}
-                <option value="{{kab}}" {% if kab == selected_kab %}selected{% endif %}>{{kab}}</option>
-                {% endfor %}
-            </select>
-        </div>
+      <div class="filter-group">
+        <label for="kab">Kab/Kota</label>
+        <select name="kab" id="kab"
+                onchange="autoSubmit('kab')"
+                {% if selected_spt == 'Semua' %}disabled{% endif %}>
+          {% for kab in kab_options %}
+          <option value="{{ kab }}" {% if kab == selected_kab %}selected{% endif %}>{{ kab }}</option>
+          {% endfor %}
+        </select>
+      </div>
     
-        <div class="filter-group">
-            <label for="kec">Kecamatan</label>
-            <select name="kec" id="kec" onchange="updateCat()">
-                {% for kec in kec_options %}
-                <option value="{{kec}}" {% if kec == selected_kec %}selected{% endif %}>{{kec}}</option>
-                {% endfor %}
-            </select>
-        </div>
+      <div class="filter-group">
+        <label for="kec">Kecamatan</label>
+        <select name="kec" id="kec"
+                onchange="autoSubmit('kec')"
+                {% if selected_spt == 'Semua' or selected_kab == 'Semua' %}disabled{% endif %}>
+          {% for kec in kec_options %}
+          <option value="{{ kec }}" {% if kec == selected_kec %}selected{% endif %}>{{ kec }}</option>
+          {% endfor %}
+        </select>
+      </div>
     
-        <div class="filter-group">
-            <label for="cat">Catatan</label>
-            <select name="cat" id="cat">
-                {% for cat in cat_options %}
-                <option value="{{cat}}" {% if cat == selected_cat %}selected{% endif %}>{{cat}}</option>
-                {% endfor %}
-            </select>
-        </div>
+      <div class="filter-group">
+        <label for="cat">Catatan</label>
+        <select name="cat" id="cat"
+                onchange="autoSubmit('cat')"
+                {% if selected_spt == 'Semua' or selected_kab == 'Semua' or selected_kec == 'Semua' %}disabled{% endif %}>
+          {% for cat in cat_options %}
+          <option value="{{ cat }}" {% if cat == selected_cat %}selected{% endif %}>{{ cat }}</option>
+          {% endfor %}
+        </select>
+      </div>
     
-        <div class="filter-buttons">
-            <button type="submit">🔍 Tampilkan</button>
-            <button form="excel-form" type="submit">⬇️ Unduh Rekap</button>
-        </div>
+      <div class="filter-buttons">
+        <button type="submit">🔍 Tampilkan</button>
+        <button form="excel-form" type="submit">⬇️ Unduh Rekap</button>
+      </div>
     </form>
     
-    <!-- Form Unduh Rekap -->
+    <!-- Form Unduh Rekap (disinkron otomatis oleh JS) -->
     <form method="POST" action="/download_excel" id="excel-form" style="display:none;">
-        <input type="hidden" name="spt" value="{{ selected_spt }}">
-        <input type="hidden" name="kab" value="{{ selected_kab }}">
-        <input type="hidden" name="kec" value="{{ selected_kec }}">
-        <input type="hidden" name="cat" value="{{ selected_cat }}">
+      <input type="hidden" name="spt" id="excel-spt" value="{{ selected_spt }}">
+      <input type="hidden" name="kab" id="excel-kab" value="{{ selected_kab }}">
+      <input type="hidden" name="kec" id="excel-kec" value="{{ selected_kec }}">
+      <input type="hidden" name="cat" id="excel-cat" value="{{ selected_cat }}">
     </form>
-
 
     <!-- Charts -->
     <div class="chart" id="bar1_pita"></div>
@@ -653,6 +652,7 @@ def get_cat(spt, kab, kec):
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=1346)
+
 
 
 
