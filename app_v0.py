@@ -519,6 +519,33 @@ def index():
             transition: 0.3s;
         }
 
+        .filter-buttons-fixed {
+          position: sticky; /* atau fixed jika mau di layar */
+          bottom: 0;
+          background: white;
+          padding: 10px;
+          display: flex;
+          justify-content: flex-end;
+          gap: 10px;
+          border-top: 1px solid #ccc;
+        }
+        
+        .filter-buttons-fixed button {
+          padding: 10px 16px;
+          background-color: #007bff;
+          color: white;
+          border: none;
+          border-radius: 6px;
+          font-weight: bold;
+          cursor: pointer;
+          transition: 0.3s;
+        }
+        
+        .filter-buttons-fixed button:hover {
+          background-color: #0056b3;
+        }
+
+
         .filter-buttons button:hover {
             background-color: #0056b3;
         }
@@ -580,12 +607,12 @@ def index():
           {% endfor %}
         </select>
       </div>
+    </form>
     
-      <div class="filter-buttons">
+    <div class="filter-buttons">
         <button type="submit">🔍 Tampilkan</button>
         <button form="excel-form" type="submit">⬇️ Unduh Rekap</button>
-      </div>
-    </form>
+    </div>
     
     <!-- Form Unduh Rekap (disinkron otomatis oleh JS) -->
     <form method="POST" action="/download_excel" id="excel-form" style="display:none;">
@@ -652,6 +679,7 @@ def get_cat(spt, kab, kec):
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=1346)
+
 
 
 
