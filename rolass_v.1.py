@@ -104,8 +104,14 @@ def download_excel():
 
     try:
         # === Load ISR & Samakan Format ===
-        df_ISR = pd.read_csv("Data Target Monitor ISR 2025 - Mataram.csv", 
-                             on_bad_lines='skip', delimiter=';') \
+        # Cari folder tempat rolass_v.1.py berada
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        
+        # Buat path absolut ke file CSV
+        isr_path = os.path.join(base_dir, "Data Target Monitor ISR 2025 - Mataram.csv")
+        
+        # Load CSV
+        df_ISR = pd.read_csv(isr_path, on_bad_lines='skip', delimiter=';') \
                     .rename(columns={'Freq': 'Frekuensi', 'Clnt Name': 'Identifikasi'})
         df_ISR['Frekuensi'] = pd.to_numeric(df_ISR['Frekuensi'], errors='coerce')
         filt['observasi_frekuensi'] = pd.to_numeric(filt['observasi_frekuensi'], errors='coerce')
@@ -125,7 +131,10 @@ def download_excel():
         jumlah_sesuai_isr = len(merged)
     
         # === Load Target ISR & Hitung Persentase ===
-        df_target_kota = pd.read_csv("target_kota2.csv", delimiter=';', on_bad_lines='skip')
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        csv_path = os.path.join(base_dir, "target_kota2.csv")
+        
+        df_target_kota = pd.read_csv(csv_path, delimiter=';', on_bad_lines='skip')
         df_target_kota['Kabupaten/Kota'] = df_target_kota['Kabupaten/Kota'].astype(str).str.strip().str.upper()
     
         kota_termonitor = filt['observasi_kota_nama'].dropna().astype(str).str.strip().str.upper().unique()
@@ -302,8 +311,14 @@ def index():
     
     try:
         # === Load ISR & Samakan Format ===
-        df_ISR = pd.read_csv("Data Target Monitor ISR 2025 - Mataram.csv", 
-                             on_bad_lines='skip', delimiter=';') \
+        # Cari folder tempat rolass_v.1.py berada
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        
+        # Buat path absolut ke file CSV
+        isr_path = os.path.join(base_dir, "Data Target Monitor ISR 2025 - Mataram.csv")
+        
+        # Load CSV
+        df_ISR = pd.read_csv(isr_path, on_bad_lines='skip', delimiter=';') \
                     .rename(columns={'Freq': 'Frekuensi', 'Clnt Name': 'Identifikasi'})
         df_ISR['Frekuensi'] = pd.to_numeric(df_ISR['Frekuensi'], errors='coerce')
         filt['observasi_frekuensi'] = pd.to_numeric(filt['observasi_frekuensi'], errors='coerce')
@@ -326,7 +341,10 @@ def index():
         jumlah_sesuai_isr = len(merged)
 
         # === Load Target ISR & Hitung Persentase ===
-        df_target_kota = pd.read_csv("target_kota2.csv", delimiter=';', on_bad_lines='skip')
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        csv_path = os.path.join(base_dir, "target_kota2.csv")
+        
+        df_target_kota = pd.read_csv(csv_path, delimiter=';', on_bad_lines='skip')
         df_target_kota['Kabupaten/Kota'] = df_target_kota['Kabupaten/Kota'].astype(str).str.strip().str.upper()
     
         kota_termonitor = filt['observasi_kota_nama'].dropna().astype(str).str.strip().str.upper().unique()
@@ -797,6 +815,7 @@ def get_cat(spt, kab, kec):
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=80)
+
 
 
 
