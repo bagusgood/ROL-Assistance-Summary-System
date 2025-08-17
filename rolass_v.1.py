@@ -125,7 +125,7 @@ def download_excel():
         jumlah_sesuai_isr = len(merged)
     
         # === Load Target ISR & Hitung Persentase ===
-        df_target_kota = pd.read_csv("target_kota2.csv", delimiter=';', on_bad_lines='skip')
+        df_target_kota = pd.read_csv("target_kota.csv", delimiter=';', on_bad_lines='skip')
         df_target_kota['Kabupaten/Kota'] = df_target_kota['Kabupaten/Kota'].astype(str).str.strip().str.upper()
     
         kota_termonitor = filt['observasi_kota_nama'].dropna().astype(str).str.strip().str.upper().unique()
@@ -326,7 +326,7 @@ def index():
         jumlah_sesuai_isr = len(merged)
 
         # === Load Target ISR & Hitung Persentase ===
-        df_target_kota = pd.read_csv("target_kota2.csv", delimiter=';', on_bad_lines='skip')
+        df_target_kota = pd.read_csv("target_kota.csv", delimiter=';', on_bad_lines='skip')
         df_target_kota['Kabupaten/Kota'] = df_target_kota['Kabupaten/Kota'].astype(str).str.strip().str.upper()
     
         kota_termonitor = filt['observasi_kota_nama'].dropna().astype(str).str.strip().str.upper().unique()
@@ -797,6 +797,7 @@ def get_cat(spt, kab, kec):
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=80)
+
 
 
 
