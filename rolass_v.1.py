@@ -1,0 +1,812 @@
+from flask import Flask, render_template_string, request
+import requests
+import pandas as pd
+import plotly.express as px
+import plotly
+import json
+from flask import send_file
+import io
+from openpyxl import Workbook
+from openpyxl.styles import Alignment
+from openpyxl.utils import get_column_letter
+import os
+import re
+
+
+app = Flask(__name__)
+
+# Bersihkan string agar aman untuk nama file
+def safe_filename(text):
+    return re.sub(r'[\\/*?:"<>|]', "_", str(text).strip())
+
+def load_data():
+    url = "https://rol.postel.go.id/api/observasi/allapproved"
+    params = {
+        "upt": 19,
+        "year": "2025",
+        "pageIndex": 1,
+        "pageSize": 100000
+    }
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+        "Accept": "*/*",
+        "Referer": "https://rol.postel.go.id/observasi/laporan",
+        "X-Requested-With": "XMLHttpRequest",
+        "Cookie": "csrf_cookie_name=6701fbfe229f77d47c710eec3391f386; ci_session=1tmigk58v1636foa82v97rmo8o2olsrc"
+    }
+
+    try:
+        response = requests.get(url, params=params, headers=headers)
+        data = response.json().get("data", [])
+        return pd.DataFrame(data)
+    except Exception as e:
+        print("Gagal ambil data API:", e)
+        return pd.DataFrame()
+
+@app.route("/download_excel", methods=["POST"])
+def download_excel():
+    df = load_data()
+
+    # Transformasi jenis identifikasi
+    df["observasi_status_identifikasi_name"] = df["observasi_status_identifikasi_name"].str.replace(
+        r"OFF AIR \(Sedang Tidak Digunakan\)", "OFF AIR", regex=True
+    )
+    df['jenis'] = df['observasi_status_identifikasi_name'].apply(
+        lambda x: 'Belum Teridentifikasi' if x == 'BELUM DIKETAHUI' else 'Teridentifikasi'
+    )
+
+    # Ambil filter dari form
+    selected_spt = request.form.get("spt", "Semua")
+    selected_kab = request.form.get("kab", "Semua")
+    selected_kec = request.form.get("kec", "Semua")
+    selected_cat = request.form.get("cat", "Semua")
+
+    # Filter data
+    filt = df.copy()
+    if selected_spt != "Semua":
+        filt = filt[filt["observasi_no_spt"] == selected_spt]
+    if selected_kab != "Semua":
+        filt = filt[filt["observasi_kota_nama"] == selected_kab]
+    if selected_kec != "Semua":
+        filt = filt[filt["observasi_kecamatan_nama"] == selected_kec]
+    if selected_cat != "Semua":
+        filt = filt[filt["scan_catatan"] == selected_cat]
+
+    if filt.empty:
+        return "<h3>Data kosong, tidak bisa disimpan.</h3>"
+    
+    # === Ringkasan Data untuk Info Cards ===
+    total_data = len(filt)
+    
+    # Hitung jumlah & persentase berizin
+    berizin_count = filt[filt['observasi_status_identifikasi_name'].str.upper() == 'BERIZIN'].shape[0]
+    berizin_percent = round((berizin_count / total_data) * 100, 1) if total_data else 0
+    
+    # Hitung jumlah & persentase off air
+    offair_count = filt[filt['observasi_status_identifikasi_name'].str.upper().str.contains('OFF AIR')].shape[0]
+    offair_percent = round((offair_count / total_data) * 100, 1) if total_data else 0
+    
+    # Hitung teridentifikasi
+    teridentifikasi_count = filt[filt['jenis'] == 'Teridentifikasi'].shape[0]
+    
+    # Hitung persentase ISR sesuai target (placeholder, sesuaikan perhitungan aslinya)
+    isr_percent = 31.4  # contoh statis sesuai gambar
+    
+    # Ambil nama Kab/Kota yang aktif dari data filter
+    kab_aktif = selected_kab if selected_kab != "Semua" else None
+
+    # Ringkasan
+    jumlah_kota = filt['observasi_kota_nama'].nunique()
+    legal = filt.groupby(['observasi_kota_nama', 'observasi_status_identifikasi_name']).size().reset_index(name='Jumlah')
+    band = filt.pivot_table(index=['observasi_kota_nama', 'band_nama', 'jenis'], aggfunc='size', fill_value=0)
+    dinas = filt.pivot_table(index=['observasi_kota_nama', 'observasi_service_name', 'jenis'], aggfunc='size', fill_value=0)
+    pita = filt.pivot_table(index=['observasi_kota_nama', 'observasi_range_frekuensi', 'observasi_status_identifikasi_name'], aggfunc='size', fill_value=0)
+
+    try:
+        # === Load ISR & Samakan Format ===
+        df_ISR = pd.read_csv("Data Target Monitor ISR 2025 - Mataram.csv", 
+                             on_bad_lines='skip', delimiter=';') \
+                    .rename(columns={'Freq': 'Frekuensi', 'Clnt Name': 'Identifikasi'})
+        df_ISR['Frekuensi'] = pd.to_numeric(df_ISR['Frekuensi'], errors='coerce')
+        filt['observasi_frekuensi'] = pd.to_numeric(filt['observasi_frekuensi'], errors='coerce')
+    
+        # Filter ISR bila kab dipilih
+        if selected_kab != "Semua":
+            df_ISR = df_ISR[df_ISR['Kab/Kota'].astype(str).str.strip().str.upper() == selected_kab.strip().upper()]
+    
+        # === Hitung kesesuaian dengan ISR ===
+        freq_df1 = filt.groupby(['observasi_frekuensi','observasi_sims_client_name']).size().reset_index(name='Jumlah_df1')
+        freq_df1 = freq_df1.rename(columns={'observasi_frekuensi': 'Frekuensi',
+                                            'observasi_sims_client_name': 'Identifikasi'})
+        freq_df2 = df_ISR.groupby(['Frekuensi','Identifikasi']).size().reset_index(name='Jumlah_df2')
+    
+        merged = pd.merge(freq_df1, freq_df2, on=['Frekuensi','Identifikasi'], how='inner') \
+                    .drop_duplicates(subset=['Frekuensi','Identifikasi'])
+        jumlah_sesuai_isr = len(merged)
+    
+        # === Load Target ISR & Hitung Persentase ===
+        df_target_kota = pd.read_csv("target_kota2.csv", delimiter=';', on_bad_lines='skip')
+        df_target_kota['Kabupaten/Kota'] = df_target_kota['Kabupaten/Kota'].astype(str).str.strip().str.upper()
+    
+        kota_termonitor = filt['observasi_kota_nama'].dropna().astype(str).str.strip().str.upper().unique()
+        target_match = df_target_kota[df_target_kota['Kabupaten/Kota'].isin(kota_termonitor)]
+    
+        jumlah_target_isr = int(target_match['Jumlah ISR'].sum()) if not target_match.empty else 0
+        persen_sesuai_isr = round((jumlah_sesuai_isr / jumlah_target_isr * 100), 2) if jumlah_target_isr > 0 else 0
+    
+    except Exception as e:
+        print("Gagal hitung kesesuaian ISR:", e)
+        jumlah_sesuai_isr, jumlah_target_isr, persen_sesuai_isr = 0, 0, 0
+
+
+
+    jumlah_iden = len(filt[filt['jenis'] == 'Teridentifikasi'])
+    jumlah_total = len(filt)
+    persen_teridentifikasi = round((jumlah_iden / jumlah_total * 100), 2) if jumlah_total > 0 else 0
+
+    # Buat Excel
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Ringkasan Laporan"
+
+    def add_centered_row(value, merge_cells=4):
+        ws.merge_cells(start_row=ws.max_row + 1, start_column=1, end_row=ws.max_row + 1, end_column=merge_cells)
+        cell = ws.cell(row=ws.max_row, column=1, value=value)
+        cell.alignment = Alignment(horizontal='center')
+
+    def add_labeled_row(label, value):
+        ws.append([label, value])
+
+    # Mulai isi
+    add_centered_row("=" * 60)
+    add_centered_row("RANGKUMAN HASIL LAPORAN SURAT TUGAS")
+    add_centered_row(selected_spt)
+    add_centered_row("=" * 60)
+
+    add_labeled_row("Jumlah Kab/Kota Termonitor:", jumlah_kota)
+    add_centered_row("=" * 60)
+
+    # Legalitas
+    ws.append(["Rangkuman Berdasarkan Legalitas:"])
+    for _, row in legal.iterrows():
+        ws.append(row.tolist())
+    add_centered_row("=" * 60)
+
+    # Band
+    ws.append(["Rangkuman Berdasarkan Band:"])
+    band_df = band.reset_index()
+    for _, row in band_df.iterrows():
+        ws.append(row.tolist())
+    add_centered_row("=" * 60)
+
+    # Dinas
+    ws.append(["Rangkuman Berdasarkan Dinas:"])
+    dinas_df = dinas.reset_index()
+    for _, row in dinas_df.iterrows():
+        ws.append(row.tolist())
+    add_centered_row("=" * 60)
+
+    # Pita
+    ws.append(["Rangkuman Berdasarkan Pita:"])
+    pita_df = pita.reset_index()
+    for _, row in pita_df.iterrows():
+        ws.append(row.tolist())
+    add_centered_row("=" * 60)
+
+    # Tambahan ringkasan
+    add_labeled_row("Jumlah Data Rekap:", jumlah_total)
+    add_labeled_row("Jumlah Stasiun Radio Teridentifikasi:", f"{jumlah_iden} ({persen_teridentifikasi}%)")
+    add_labeled_row("Jumlah Stasiun Radio Sesuai ISR:", f"{jumlah_sesuai_isr} ({persen_sesuai_isr}%)")
+
+    add_centered_row("=" * 60)
+
+    # Atur lebar kolom otomatis
+    for col in ws.columns:
+        max_len = 0
+        col_letter = get_column_letter(col[0].column)
+        for cell in col:
+            try:
+                if cell.value:
+                    max_len = max(max_len, len(str(cell.value)))
+            except:
+                pass
+        ws.column_dimensions[col_letter].width = max_len + 2
+
+    # Simpan ke file sementara
+    from tempfile import NamedTemporaryFile
+    tmp = NamedTemporaryFile(delete=False, suffix=".xlsx")
+    wb.save(tmp.name)
+    tmp.seek(0)
+
+    # Ubah nama berdasarkan input
+    safe_spt = safe_filename(selected_spt)
+    safe_kab = safe_filename(selected_kab)
+    safe_kec = safe_filename(selected_kec)
+    filename = f"Rekap_Observasi {safe_spt} {safe_kec} {safe_kab}.xlsx"
+
+    return send_file(
+        tmp.name,
+        as_attachment=True,
+        download_name=filename,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+
+
+@app.route("/", methods=["GET", "POST"])
+def index():
+    df = load_data()
+
+    # Tambahkan kolom jenis
+    df['jenis'] = df['observasi_status_identifikasi_name'].apply(
+        lambda x: 'Belum Teridentifikasi' if x == 'BELUM DIKETAHUI' else 'Teridentifikasi'
+    )
+
+    if df.empty:
+        return "Data tidak tersedia. Periksa koneksi API atau cookie."
+
+    # Ambil pilihan dari form
+    selected_spt = request.form.get("spt", "Semua")
+    selected_kab = request.form.get("kab", "Semua")
+    selected_kec = request.form.get("kec", "Semua")
+    selected_cat = request.form.get("cat", "Semua")
+
+    # ===== Filter bertingkat =====
+    if selected_spt != "Semua":
+        df_spt = df[df["observasi_no_spt"] == selected_spt]
+    else:
+        df_spt = df
+
+    if selected_kab != "Semua":
+        df_kab = df_spt[df_spt["observasi_kota_nama"] == selected_kab]
+    else:
+        df_kab = df_spt
+
+    if selected_kec != "Semua":
+        df_kec = df_kab[df_kab["observasi_kecamatan_nama"] == selected_kec]
+    else:
+        df_kec = df_kab
+
+    # ===== Dropdown options =====
+    spt_options = ["Semua"] + sorted(df["observasi_no_spt"].dropna().unique().tolist())
+    kab_options = ["Semua"] + sorted(df_spt["observasi_kota_nama"].dropna().unique().tolist())
+    kec_options = ["Semua"] + sorted(df_kab["observasi_kecamatan_nama"].dropna().unique().tolist())
+    cat_options = ["Semua"] + sorted(df_kec["scan_catatan"].dropna().unique().tolist())
+
+    # ===== Filter akhir untuk tampilan data =====
+    filt = df.copy()
+    if selected_spt != "Semua":
+        filt = filt[filt["observasi_no_spt"] == selected_spt]
+    if selected_kab != "Semua":
+        filt = filt[filt["observasi_kota_nama"] == selected_kab]
+    if selected_kec != "Semua":
+        filt = filt[filt["observasi_kecamatan_nama"] == selected_kec]
+    if selected_cat != "Semua":
+        filt = filt[filt["scan_catatan"] == selected_cat]
+
+    if filt.empty:
+        return f"<h3>Data kosong untuk kombinasi tersebut.</h3><p>SPT: {selected_spt}, Kab: {selected_kab}, Kec: {selected_kec}</p>"
+    
+    # === Ringkasan Data untuk Info Cards ===
+    total_data = len(filt)
+    
+    # Hitung jumlah & persentase berizin
+    berizin_count = filt[filt['observasi_status_identifikasi_name'].str.upper() == 'BERIZIN'].shape[0]
+    berizin_percent = round((berizin_count / total_data) * 100, 1) if total_data else 0
+    
+    # Hitung jumlah & persentase off air
+    offair_count = filt[filt['observasi_status_identifikasi_name'].str.upper().str.contains('OFF AIR')].shape[0]
+    offair_percent = round((offair_count / total_data) * 100, 1) if total_data else 0
+    
+    # Hitung teridentifikasi
+    teridentifikasi_count = filt[filt['jenis'] == 'Teridentifikasi'].shape[0]
+    
+    try:
+        # === Load ISR & Samakan Format ===
+        df_ISR = pd.read_csv("Data Target Monitor ISR 2025 - Mataram.csv", 
+                             on_bad_lines='skip', delimiter=';') \
+                    .rename(columns={'Freq': 'Frekuensi', 'Clnt Name': 'Identifikasi'})
+        df_ISR['Frekuensi'] = pd.to_numeric(df_ISR['Frekuensi'], errors='coerce')
+        filt['observasi_frekuensi'] = pd.to_numeric(filt['observasi_frekuensi'], errors='coerce')
+    
+        # Filter ISR bila kab dipilih
+        if selected_kab != "Semua":
+            df_ISR = df_ISR[df_ISR['Kab/Kota'].astype(str).str.strip().str.upper() == selected_kab.strip().upper()]
+    
+        # === Hitung kesesuaian dengan ISR ===
+        freq_df1 = filt.groupby(['observasi_frekuensi','observasi_sims_client_name']).size().reset_index(name='Jumlah_df1')
+        freq_df1 = freq_df1.rename(columns={'observasi_frekuensi': 'Frekuensi',
+                                            'observasi_sims_client_name': 'Identifikasi'})
+        freq_df2 = df_ISR.groupby(['Frekuensi','Identifikasi']).size().reset_index(name='Jumlah_df2')
+    
+        merged = pd.merge(freq_df1, freq_df2, on=['Frekuensi', 'Identifikasi'], how='inner')
+        
+        # Hapus duplikat, hanya sisakan satu per kombinasi Frekuensi & Identifikasi
+        merged = merged.drop_duplicates(subset=['Frekuensi', 'Identifikasi'])
+        
+        jumlah_sesuai_isr = len(merged)
+
+        # === Load Target ISR & Hitung Persentase ===
+        df_target_kota = pd.read_csv("target_kota2.csv", delimiter=';', on_bad_lines='skip')
+        df_target_kota['Kabupaten/Kota'] = df_target_kota['Kabupaten/Kota'].astype(str).str.strip().str.upper()
+    
+        kota_termonitor = filt['observasi_kota_nama'].dropna().astype(str).str.strip().str.upper().unique()
+        target_match = df_target_kota[df_target_kota['Kabupaten/Kota'].isin(kota_termonitor)]
+    
+        jumlah_target_isr = int(target_match['Jumlah ISR'].sum()) if not target_match.empty else 0
+        persen_sesuai_isr = round((jumlah_sesuai_isr / jumlah_target_isr * 100), 2) if jumlah_target_isr > 0 else 0
+    
+    except Exception as e:
+        print("Gagal hitung kesesuaian ISR:", e)
+        jumlah_sesuai_isr, jumlah_target_isr, persen_sesuai_isr = 0, 0, 0
+
+    # Persentase ISR sesuai target (sementara contoh statis)
+    isr_percent = persen_sesuai_isr
+    #isr_percent = jumlah_target_isr
+    #isr_percent = jumlah_sesuai_isr
+
+    # Chart
+    pie1 = px.pie(filt, names="observasi_status_identifikasi_name", title="Distribusi Legalitas",
+                  hole=0.5, 
+                  color_discrete_sequence=["#006db0", "#00ade6", "#edbc1b", "#8f181b", "#EF4444", "#6B7280",
+                                           "#6d98b3", "#91cfe3", "#af8703", "#a83639", "#575759", "#252526",
+                                           "#044065", "#d5ad2b", "#884a4c"])
+    pie1.update_layout(
+        legend=dict(
+            font=dict(color='white', size=8))
+        )
+    pie_band = px.pie(filt, names="band_nama", title="Distribusi Band", 
+                      hole=0.5,
+                      color_discrete_sequence=["#006db0", "#00ade6", "#edbc1b", "#8f181b", "#EF4444", "#6B7280",
+                                               "#6d98b3", "#91cfe3", "#af8703", "#a83639", "#575759", "#252526",
+                                               "#044065", "#d5ad2b", "#884a4c"])
+
+    bar = filt.groupby(["observasi_service_name", "jenis"]).size().reset_index(name="jumlah").sort_values(by="jumlah", ascending=False)
+    total_per_dinas = (
+    filt.groupby("observasi_service_name")
+    .size()
+    .sort_values(ascending=False))
+    
+    ordered_dinas = total_per_dinas.index.tolist()  # urutan berdasarkan total
+    bar1 = px.bar(bar, y="observasi_service_name", x="jumlah", color="jenis", orientation='h',
+                  title="Distribusi Dinas & Jenis",
+                  labels={"observasi_service_name": "Nama Dinas",
+                          "jumlah": "Jumlah Data",
+                          "jenis": ""},
+                  category_orders={"observasi_service_name": ordered_dinas},
+                  color_discrete_sequence=["#006db0", "#00ade6", "#edbc1b", "#8f181b", "#EF4444", "#6B7280",
+                                           "#6d98b3", "#91cfe3", "#af8703", "#a83639", "#575759", "#252526",
+                                           "#044065", "#d5ad2b", "#884a4c"])
+    
+    bar1.update_layout(
+        uniformtext_minsize=8,
+        uniformtext_mode='hide',
+        bargap=0.2,
+        plot_bgcolor='#0f172a',
+        paper_bgcolor='#0f172a',
+        font=dict(color='white'),
+        legend=dict(
+            orientation="h",      # horizontal
+            yanchor="bottom",     # anchor ke bawah
+            y=-0.3,               # posisi agak di luar bawah chart
+            xanchor="center",     
+            x=0.5                 # posisi di tengah
+        )
+    )
+
+
+    bar_pita = filt.groupby(["observasi_range_frekuensi", "observasi_status_identifikasi_name"]).size().reset_index(name="jumlah").sort_values(by="jumlah", ascending=False)
+    # Buat kolom pita_singkat
+    bar_pita["pita_singkat"] = bar_pita["observasi_range_frekuensi"].astype(str).str.split('.').str[0]
+
+
+    total_per_pita = (
+    filt.groupby("observasi_range_frekuensi")
+    .size()
+    .sort_values(ascending=False))
+    
+    ordered_pita = total_per_pita.index.tolist()  # urutan berdasarkan total
+    # Urutan kategori singkat berdasarkan urutan original
+    ordered_pita_singkat = [
+        str(val).split('.')[0] for val in ordered_pita
+    ]
+    
+    bar1_pita = px.bar(
+        bar_pita,
+        y="pita_singkat",
+        x="jumlah",
+        color="observasi_status_identifikasi_name",
+        orientation='h',
+        title="Distribusi Pita & Legalitas",
+        labels={
+            "pita_singkat": "Pita Frekuensi",
+            "jumlah": "Jumlah Data",
+            "observasi_status_identifikasi_name": ""
+        },
+        category_orders={"pita_singkat": ordered_pita_singkat},
+        hover_name="observasi_range_frekuensi",
+        color_discrete_sequence=["#006db0", "#00ade6", "#edbc1b", "#8f181b", "#EF4444", "#6B7280",
+                                 "#6d98b3", "#91cfe3", "#af8703", "#a83639", "#575759", "#252526",
+                                 "#044065", "#d5ad2b", "#884a4c"]
+    )
+    
+    bar1_pita.update_traces(text=None)    
+    bar1_pita.update_layout(
+        uniformtext_minsize=8,
+        uniformtext_mode='hide',
+        bargap=0.2,
+        plot_bgcolor='#0f172a',
+        paper_bgcolor='#0f172a',
+        legend=dict(
+            font=dict(size=8),
+            orientation="h",
+            yanchor="bottom",
+            y=-0.4,
+            xanchor="center",
+            x=0.5,
+        )
+    )
+    for fig in [pie1]:
+        for fig in [pie1, pie_band, bar1, bar1_pita]:
+            fig.update_layout(
+                paper_bgcolor="#1e293b",  # background luar chart
+                plot_bgcolor="#1e293b",   # background area plot
+                font=dict(color="white")  # teks jadi putih
+            )
+        
+    for fig in [pie_band, bar1, bar1_pita]:
+        fig.update_layout(
+            paper_bgcolor="#1e293b",
+            plot_bgcolor="#1e293b",
+            font=dict(color="white"),
+            margin=dict(l=40, r=20, t=60, b=80),
+            legend=dict(
+                orientation="h",     # horizontal
+                yanchor="top",       # anchor ke atas legend
+                y=-0.2,              # posisikan sedikit di bawah chart
+                xanchor="center",
+                x=0.5
+            )
+        )
+
+
+    pie1_json = json.dumps(pie1, cls=plotly.utils.PlotlyJSONEncoder)
+    pie_band_json = json.dumps(pie_band, cls=plotly.utils.PlotlyJSONEncoder)
+    bar1_json = json.dumps(bar1, cls=plotly.utils.PlotlyJSONEncoder)
+    bar1_pita_json = json.dumps(bar1_pita, cls=plotly.utils.PlotlyJSONEncoder)
+    
+    return render_template_string('''
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <title>DATA OBSERVASI BALAI MONITOR SFR KELAS II MATARAM TAHUN 2025</title>
+        <link rel="icon" type="image/png" href="{{ url_for('static', filename='D.png') }}">
+        <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+        <style>
+            body { font-family: Arial; padding: 20px; }
+            select { margin-right: 10px; }
+            .chart { margin-top: 30px; }
+            .chart-row {
+                display: flex;
+                flex-wrap: wrap;     /* biar chart bisa turun ke bawah kalau layar sempit */
+                gap: 20px;
+                margin: 20px 0;
+            }
+            }
+            .chart {
+                flex: 1;
+                width: 100%;       /* ikut lebar container */
+                height: auto;      /* tinggi menyesuaikan */
+                min-width: 0;      /* biar bisa mengecil */
+            }
+            body {
+                background-color: #0d1b2a;
+                color: white;
+                font-family: 'Segoe UI', sans-serif;
+            }
+        
+            .filter-form {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 20px;
+                margin: 25px 0;
+                background-color: #1e1e1e; /* gelap */
+                padding: 20px;
+                border-radius: 10px;
+                box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+            }
+            
+            .filter-group label {
+                font-weight: 600;
+                margin-bottom: 5px;
+                color: #ddd; /* teks terang */
+            }
+            
+            .filter-group select {
+                padding: 8px;
+                border: 1px solid #444;
+                border-radius: 6px;
+                font-size: 14px;
+                background-color: #2a2a2a; /* gelap */
+                color: #f5f5f5; /* teks terang */
+            }
+            
+            .filter-buttons button {
+                padding: 10px 16px;
+                background-color: #007bff;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                font-weight: bold;
+                cursor: pointer;
+                transition: 0.3s;
+            }
+            
+            .filter-buttons button:hover {
+                background-color: #0056b3;
+            }
+            .chart-container {
+                flex: 1 1 400px;     /* minimal 400px, tapi bisa melebar penuh */
+                background-color: #1e293b;
+                border-radius: 10px;
+                padding: 15px;
+                min-height: 400px;   /* tinggi minimal */
+                width: 100%;         /* agar ikuti parent */
+            }
+        </style>
+        
+    </head>
+    
+    <script>
+    function syncExcelForm() {
+      document.getElementById('excel-spt').value = document.getElementById('spt').value;
+      document.getElementById('excel-kab').value = document.getElementById('kab').value;
+      document.getElementById('excel-kec').value = document.getElementById('kec').value;
+      document.getElementById('excel-cat').value = document.getElementById('cat').value;
+    }
+    
+    function autoSubmit(level) {
+      const form = document.getElementById('main-form');
+      const spt = document.getElementById('spt');
+      const kab = document.getElementById('kab');
+      const kec = document.getElementById('kec');
+      const cat = document.getElementById('cat');
+    
+      // Reset bertingkat & kunci dropdown berikutnya
+      if (level === 'spt') {
+        kab.selectedIndex = 0; kab.disabled = false;
+        kec.selectedIndex = 0; kec.disabled = true;
+        cat.selectedIndex = 0; cat.disabled = true;
+      } else if (level === 'kab') {
+        kec.selectedIndex = 0; kec.disabled = false;
+        cat.selectedIndex = 0; cat.disabled = true;
+      } else if (level === 'kec') {
+        cat.selectedIndex = 0; cat.disabled = false;
+      }
+    
+      // Sinkron nilai ke form Excel
+      syncExcelForm();
+    
+      // Auto-submit untuk refresh data di server
+      // requestSubmit() akan hormati type & constraints, fallback ke submit()
+      if (form.requestSubmit) form.requestSubmit();
+      else form.submit();
+    }
+    
+    // Saat halaman pertama kali dimuat, pastikan form Excel tersinkron
+    document.addEventListener('DOMContentLoaded', syncExcelForm);
+    </script>
+
+
+
+    <body style="background-color:#0d1b2a; color:white; font-family:Segoe UI, sans-serif;">
+
+    <div style="display:flex; align-items:center; gap:15px; padding:20px;">
+        <img src="/static/logo-komdigi2.png" style="height:50px;">
+        <img src="/static/djid.png" style="height:50px;">
+        <div>
+            <h2 style="margin:0;">Dashboard Observasi Frekuensi – Balmon SFR Kelas II Mataram</h2/>
+            <p style="margin:0; font-size:16px; color:#9ca3af;">ROL Assistance Summary System (ROLASS)</p>
+        </div>
+    </div>
+    
+    <!-- Info Cards -->
+    <div style="display:grid; grid-template-columns: repeat(5, 1fr); gap:15px; padding:20px;">
+        
+        <!-- Card 1 -->
+        <div style="background:#1e293b; padding:8px; border-radius:8px; display:flex; align-items:center; gap:12px;">
+            <img src="/static/1.png" alt="Data" style="width:40px; height:40px;">
+            <div>
+                <h1 style="margin:0;">{{ total_data }}</h1>
+                <p style="margin:0;">Total Data Observasi</p>
+            </div>
+        </div>
+        
+        <!-- Card 2 -->
+        <div style="background:#1e293b; padding:8px; border-radius:8px; display:flex; align-items:center; gap:12px;">
+            <img src="/static/2.png" alt="Berizin" style="width:40px; height:40px;">
+            <div>
+                <h1 style="margin:0;">{{ berizin_percent }}%</h1>
+                <p style="margin:0;">Berizin</p>
+            </div>
+        </div>
+        
+        <!-- Card 3 -->
+        <div style="background:#1e293b; padding:8px; border-radius:8px; display:flex; align-items:center; gap:12px;">
+            <img src="/static/3.png" alt="Off Air" style="width:36px; height:36px;">
+            <div>
+                <h1 style="margin:0;">{{ offair_percent }}%</h1>
+                <p style="margin:0;">Off Air</p>
+            </div>
+        </div>
+        
+        <!-- Card 4 -->
+        <div style="background:#1e293b; padding:8px; border-radius:8px; display:flex; align-items:center; gap:12px;">
+            <img src="/static/4.png" alt="Teridentifikasi" style="width:36px; height:36px;">
+            <div>
+                <h1 style="margin:0;">{{ teridentifikasi_count }}</h1>
+                <p style="margin:0;">Teridentifikasi</p>
+            </div>
+        </div>
+        
+        <!-- Card 5 -->
+        <div style="background:#1e293b; padding:8px; border-radius:8px; display:flex; align-items:center; gap:12px;">
+            <img src="/static/5.png" alt="ISR" style="width:36px; height:36px;">
+            <div>
+                <h1 style="margin:0;">{{ isr_percent }}%</h1>
+                <p style="margin:0;">ISR Sesuai Target</p>
+            </div>
+        </div>
+    
+    </div>
+
+    
+    <!-- Filter -->
+    <form method="POST" class="filter-form" id="main-form">
+        <!-- Dropdown filter -->
+        <div class="filter-group">
+            <label for="spt">No SPT</label>
+            <select name="spt" id="spt" onchange="autoSubmit('spt')">
+                {% for spt in spt_options %}
+                <option value="{{ spt }}" {% if spt == selected_spt %}selected{% endif %}>{{ spt }}</option>
+                {% endfor %}
+            </select>
+        </div>
+    
+        <!-- Tambahkan dropdown Kab/Kota -->
+        <div class="filter-group">
+            <label for="kab">Kab/Kota</label>
+            <select name="kab" id="kab" onchange="autoSubmit('kab')">
+                {% for kab in kab_options %}
+                <option value="{{ kab }}" {% if kab == selected_kab %}selected{% endif %}>{{ kab }}</option>
+                {% endfor %}
+            </select>
+        </div>
+    
+        <!-- Tambahkan dropdown Kecamatan -->
+        <div class="filter-group">
+            <label for="kec">Kecamatan</label>
+            <select name="kec" id="kec" onchange="autoSubmit('kec')">
+                {% for kec in kec_options %}
+                <option value="{{ kec }}" {% if kec == selected_kec %}selected{% endif %}>{{ kec }}</option>
+                {% endfor %}
+            </select>
+        </div>
+    
+        <!-- Tambahkan dropdown Catatan -->
+        <div class="filter-group">
+            <label for="cat">Catatan</label>
+            <select name="cat" id="cat" onchange="autoSubmit('cat')">
+                {% for cat in cat_options %}
+                <option value="{{ cat }}" {% if cat == selected_cat %}selected{% endif %}>{{ cat }}</option>
+                {% endfor %}
+            </select>
+        </div>
+    
+        <!-- Tombol -->
+        <div style="display:flex; align-items:flex-end; gap:10px;">
+            <button type="submit" style="background:#006db0; color:white; border:none; padding:8px 14px; border-radius:6px;">🔍 Tampilkan</button>
+            <button form="excel-form" type="submit" style="background:#006db0; color:white; border:none; padding:8px 14px; border-radius:6px;">⬇️ Unduh Rekap</button>
+        </div>
+    </form>
+      
+    
+    <!-- Form Unduh Rekap (disinkron otomatis oleh JS) -->
+        <form method="POST" action="/download_excel" id="excel-form" style="display:none;">
+          <input type="hidden" name="spt" id="excel-spt" value="{{ selected_spt }}">
+          <input type="hidden" name="kab" id="excel-kab" value="{{ selected_kab }}">
+          <input type="hidden" name="kec" id="excel-kec" value="{{ selected_kec }}">
+          <input type="hidden" name="cat" id="excel-cat" value="{{ selected_cat }}">
+        </form>
+
+    <!-- Charts -->
+    
+    <div class="chart-row">
+        <div class="chart-container" id="pie1"></div>
+        <div class="chart-container" id="bar1_pita"></div>
+        
+    </div>
+    
+    <div class="chart-row">
+        <div class="chart-container" id="pie_band"></div>
+        <div class="chart-container" id="bar1"></div>
+    </div>
+
+    
+    <script>
+        Plotly.newPlot("pie1", {{ pie1_json|safe }}.data, {{ pie1_json|safe }}.layout, {responsive: true});
+        Plotly.newPlot("bar1_pita", {{ bar1_pita_json|safe }}.data, {{ bar1_pita_json|safe }}.layout, {responsive: true});
+        Plotly.newPlot("pie_band", {{ pie_band_json|safe }}.data, {{ pie_band_json|safe }}.layout, {responsive: true});
+        Plotly.newPlot("bar1", {{ bar1_json|safe }}.data, {{ bar1_json|safe }}.layout, {responsive: true});
+    </script>
+    
+    </body>
+
+
+    </html>
+    ''',
+    spt_options=spt_options,
+    kab_options=kab_options,
+    kec_options=kec_options,
+    cat_options=cat_options,
+    selected_spt=selected_spt,
+    selected_kab=selected_kab,
+    selected_kec=selected_kec,
+    selected_cat=selected_cat,
+    pie1_json=pie1_json,
+    pie_band_json=pie_band_json,
+    bar1_json=bar1_json,
+    bar1_pita_json=bar1_pita_json,
+    total_data=total_data,
+    berizin_percent=berizin_percent,
+    offair_percent=offair_percent,
+    teridentifikasi_count=teridentifikasi_count,
+    isr_percent=isr_percent
+    )
+    
+@app.route("/get_kab/<spt>")
+def get_kab(spt):
+    df = load_data()
+    if spt != "Semua":
+        df = df[df["observasi_no_spt"] == spt]
+    kab_options = sorted(df["observasi_kota_nama"].dropna().unique().tolist())
+    return {"kab_list": kab_options}
+
+@app.route("/get_kec/<spt>/<kab>")
+def get_kec(spt, kab):
+    df = load_data()
+    if spt != "Semua":
+        df = df[df["observasi_no_spt"] == spt]
+    if kab != "Semua":
+        df = df[df["observasi_kota_nama"] == kab]
+    kec_options = sorted(df["observasi_kecamatan_nama"].dropna().unique().tolist())
+    return {"kec_list": kec_options}
+
+@app.route("/get_cat/<spt>/<kab>/<kec>")
+def get_cat(spt, kab, kec):
+    df = load_data()
+    if spt != "Semua":
+        df = df[df["observasi_no_spt"] == spt]
+    if kab != "Semua":
+        df = df[df["observasi_kota_nama"] == kab]
+    if kec != "Semua":
+        df = df[df["observasi_kecamatan_nama"] == kec]
+    cat_options = sorted(df["scan_catatan"].dropna().unique().tolist())
+    return {"cat_list": cat_options}
+
+
+if __name__ == "__main__":
+    app.run(debug=True, host="0.0.0.0", port=1346)
+
+
+
+
+
+
+
+
+
+
+
+
+
