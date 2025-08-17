@@ -796,7 +796,8 @@ def get_cat(spt, kab, kec):
 
 
 if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0", port=1346)
+    app.run(host="0.0.0.0", port=80)
+
 
 
 
