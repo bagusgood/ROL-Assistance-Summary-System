@@ -472,8 +472,14 @@ def index():
     
     try:
         # === Load ISR & Samakan Format ===
-        df_ISR = pd.read_csv("Data Target Monitor ISR 2025 - Mataram.csv", 
-                             on_bad_lines='skip', delimiter=';') \
+        # Cari folder tempat rolass_v.1.py berada
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        
+        # Buat path absolut ke file CSV
+        isr_path = os.path.join(base_dir, "Data Target Monitor ISR 2025 - Mataram.csv")
+        
+        # Load CSV
+        df_ISR = pd.read_csv(isr_path, on_bad_lines='skip', delimiter=';') \
                     .rename(columns={'Freq': 'Frekuensi', 'Clnt Name': 'Identifikasi'})
         df_ISR['Frekuensi'] = pd.to_numeric(df_ISR['Frekuensi'], errors='coerce')
         filt['observasi_frekuensi'] = pd.to_numeric(filt['observasi_frekuensi'], errors='coerce')
@@ -1042,6 +1048,7 @@ def get_cat(spt, kab, kec):
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=80)
+
 
 
 
