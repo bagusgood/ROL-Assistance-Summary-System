@@ -15,8 +15,7 @@ from plotly.utils import PlotlyJSONEncoder
 from openpyxl.worksheet.page import PageMargins
 from openpyxl.worksheet.pagebreak import Break
 from openpyxl.styles import Alignment, Border, Side
-
-
+from openpyxl.styles import PatternFill
 
 app = Flask(__name__)
 
@@ -117,26 +116,6 @@ def download_excel():
 
     if filt.empty:
         return "<h3>Data kosong, tidak bisa disimpan.</h3>"
-    
-    # === Ringkasan Data untuk Info Cards ===
-    total_data = len(filt)
-    
-    # Hitung jumlah & persentase berizin
-    berizin_count = filt[filt['observasi_status_identifikasi_name'].str.upper() == 'BERIZIN'].shape[0]
-    berizin_percent = round((berizin_count / total_data) * 100, 1) if total_data else 0
-    
-    # Hitung jumlah & persentase off air
-    offair_count = filt[filt['observasi_status_identifikasi_name'].str.upper().str.contains('OFF AIR')].shape[0]
-    offair_percent = round((offair_count / total_data) * 100, 1) if total_data else 0
-    
-    # Hitung teridentifikasi
-    teridentifikasi_count = filt[filt['jenis'] == 'Teridentifikasi'].shape[0]
-    
-    # Hitung persentase ISR sesuai target (placeholder, sesuaikan perhitungan aslinya)
-    isr_percent = 31.4  # contoh statis sesuai gambar
-    
-    # Ambil nama Kab/Kota yang aktif dari data filter
-    kab_aktif = selected_kab if selected_kab != "Semua" else None
 
     # Ringkasan
     jumlah_kota = filt['observasi_kota_nama'].nunique()
@@ -208,11 +187,34 @@ def download_excel():
 
     def add_labeled_row(label, value):
         ws.append([label, value])
+    
+    # Definisi border tipis
+    thin_border = Border(
+        left=Side(style='thin'),
+        right=Side(style='thin'),
+        top=Side(style='thin'),
+        bottom=Side(style='thin')
+    )
+    
+    # Definisi border tipis
+    thin_border2 = Border(
+        bottom=Side(style='thin')
+    )
+            
+    # Set orientasi dan scaling untuk siap print
+    ws.page_setup.orientation = ws.ORIENTATION_LANDSCAPE
+    ws.page_setup.paperSize = ws.PAPERSIZE_A4
+    
+    # Scale agar muat halaman (70% dari ukuran normal)
+    ws.page_setup.scale = 75
+    
+    # Atur margin
+    ws.page_margins = PageMargins(left=0.3, right=0.3, top=0.5, bottom=0.5)
 
     # Mulai isi
-    add_centered_row("=" * 60)
     add_centered_row("RANGKUMAN HASIL LAPORAN SURAT TUGAS")
     add_centered_row(selected_spt)
+    add_centered_row(f"{selected_kec} - {selected_kab}")
     add_centered_row("=" * 60)
 
     add_labeled_row("Jumlah Kab/Kota Termonitor:", jumlah_kota)
@@ -263,7 +265,7 @@ def download_excel():
             except:
                 pass
         ws.column_dimensions[col_letter].width = max_len + 2
-    
+            
     # === Tambahkan Data Observasi Terfilter di Sheet Baru ===
     filt_sheet2 = filt.copy()
 
@@ -316,14 +318,6 @@ def download_excel():
     # Tulis header
     ws2.append(list(filt_sheet2.columns))
     
-    # Definisi border tipis
-    thin_border = Border(
-        left=Side(style='thin'),
-        right=Side(style='thin'),
-        top=Side(style='thin'),
-        bottom=Side(style='thin')
-    )
-        
     # Tulis data
     for _, row in filt_sheet2.iterrows():
         ws2.append(row.tolist())
@@ -355,7 +349,7 @@ def download_excel():
             col_letter = get_column_letter(col_map[sc])
             current_width = ws2.column_dimensions[col_letter].width
             ws2.column_dimensions[col_letter].width = max(10, current_width / 2)
-        
+    
     # Set orientasi dan scaling untuk siap print
     ws2.page_setup.orientation = ws2.ORIENTATION_LANDSCAPE
     ws2.page_setup.paperSize = ws2.PAPERSIZE_A4
@@ -368,7 +362,13 @@ def download_excel():
     
     # Tambahkan print titles (header row selalu tampil di atas setiap halaman)
     ws2.print_title_rows = "1:1"
+
+    # Fill abu-abu untuk header baris pertama
+    header_fill = PatternFill(start_color="D9D9D9", end_color="D9D9D9", fill_type="solid")
     
+    for cell in ws2[1]:  # row pertama = header
+        cell.fill = header_fill
+
     # Mode page break preview
     ws.sheet_view.view = "pageBreakPreview"
     ws2.sheet_view.view = "pageBreakPreview"
@@ -383,7 +383,7 @@ def download_excel():
     safe_spt = safe_filename(selected_spt)
     safe_kab = safe_filename(selected_kab)
     safe_kec = safe_filename(selected_kec)
-    filename = f"Rekap_Observasi {safe_spt} {safe_kec} {safe_kab}.xlsx"
+    filename = f"Rekap {safe_spt} {safe_kec} {safe_kab}.xlsx"
 
     return send_file(
         tmp.name,
@@ -459,16 +459,28 @@ def index():
     # === Ringkasan Data untuk Info Cards ===
     total_data = len(filt)
     
-    # Hitung jumlah & persentase berizin
-    berizin_count = filt[filt['observasi_status_identifikasi_name'].str.upper() == 'BERIZIN'].shape[0]
-    berizin_percent = round((berizin_count / total_data) * 100, 1) if total_data else 0
+    # Hitung jumlah ilegal (TANPA IZIN + KADALUARSA)
+    filt_no_netral = filt[~filt["observasi_status_identifikasi_name"].isin(["CLEAR", "NOISE", "IDENTIFIKASI LEBIH LANJUT", "BELUM DIKETAHUI"])]
+    total_no_netral = len(filt_no_netral)
+    ilegal_count = filt[filt['observasi_status_identifikasi_name'].str.upper().isin(['TANPA IZIN', 'KADALUARSA'])].shape[0]
+    ilegal_percent = round((ilegal_count / total_no_netral) * 100, 2) if total_no_netral else 0
     
+    # Persentase berizin = 100 - ilegal
+    berizin_percent = 100 - ilegal_percent
+
     # Hitung jumlah & persentase off air
     offair_count = filt[filt['observasi_status_identifikasi_name'].str.upper().str.contains('OFF AIR')].shape[0]
     offair_percent = round((offair_count / total_data) * 100, 1) if total_data else 0
     
     # Hitung teridentifikasi
     teridentifikasi_count = filt[filt['jenis'] == 'Teridentifikasi'].shape[0]
+    
+    # Hitung jumlah Kab/Kota termonitor
+    jumlah_kota_termonitor = df['observasi_kota_nama'].nunique()
+    
+    # Hitung persentase kab/kota termonitor
+    persen_kota_termonitor = round((jumlah_kota_termonitor / 10) * 100, 1)
+
     
     try:
         # === Load ISR & Samakan Format ===
@@ -520,8 +532,6 @@ def index():
 
     # Persentase ISR sesuai target (sementara contoh statis)
     isr_percent = persen_sesuai_isr
-    #isr_percent = jumlah_target_isr
-    #isr_percent = jumlah_sesuai_isr
 
     # Chart
     pie1 = px.pie(filt, names="observasi_status_identifikasi_name", title="Distribusi Legalitas",
@@ -572,11 +582,9 @@ def index():
         )
     )
 
-
     bar_pita = filt.groupby(["observasi_range_frekuensi", "observasi_status_identifikasi_name"]).size().reset_index(name="jumlah").sort_values(by="jumlah", ascending=False)
     # Buat kolom pita_singkat
     bar_pita["pita_singkat"] = bar_pita["observasi_range_frekuensi"].astype(str).str.split('.').str[0]
-
 
     total_per_pita = (
     filt.groupby("observasi_range_frekuensi")
@@ -833,7 +841,7 @@ def index():
         
         <!-- Card 1 -->
         <div style="background:#1e293b; padding:8px; border-radius:8px; display:flex; align-items:center; gap:12px;">
-            <img src="/static/1.png" alt="Data" style="width:40px; height:40px;">
+            <img src="/static/1.png" alt="Data" style="width:36px; height:36px;">
             <div>
                 <h1 style="margin:0;">{{ total_data }}</h1>
                 <p style="margin:0;">Total Data Observasi</p>
@@ -842,24 +850,6 @@ def index():
         
         <!-- Card 2 -->
         <div style="background:#1e293b; padding:8px; border-radius:8px; display:flex; align-items:center; gap:12px;">
-            <img src="/static/2.png" alt="Berizin" style="width:40px; height:40px;">
-            <div>
-                <h1 style="margin:0;">{{ berizin_percent }}%</h1>
-                <p style="margin:0;">Berizin</p>
-            </div>
-        </div>
-        
-        <!-- Card 3 -->
-        <div style="background:#1e293b; padding:8px; border-radius:8px; display:flex; align-items:center; gap:12px;">
-            <img src="/static/3.png" alt="Off Air" style="width:36px; height:36px;">
-            <div>
-                <h1 style="margin:0;">{{ offair_percent }}%</h1>
-                <p style="margin:0;">Off Air</p>
-            </div>
-        </div>
-        
-        <!-- Card 4 -->
-        <div style="background:#1e293b; padding:8px; border-radius:8px; display:flex; align-items:center; gap:12px;">
             <img src="/static/4.png" alt="Teridentifikasi" style="width:36px; height:36px;">
             <div>
                 <h1 style="margin:0;">{{ teridentifikasi_count }}</h1>
@@ -867,12 +857,30 @@ def index():
             </div>
         </div>
         
-        <!-- Card 5 -->
+        <!-- Card 3 -->
+        <div style="background:#1e293b; padding:8px; border-radius:8px; display:flex; align-items:center; gap:12px;">
+            <img src="/static/2.png" alt="Berizin" style="width:36px; height:36px;">
+            <div>
+                <h1 style="margin:0;">{{ berizin_percent }}%</h1>
+                <p style="margin:0;">Berizin</p>
+            </div>
+        </div>
+        
+        <!-- Card 4 -->
         <div style="background:#1e293b; padding:8px; border-radius:8px; display:flex; align-items:center; gap:12px;">
             <img src="/static/5.png" alt="ISR" style="width:36px; height:36px;">
             <div>
                 <h1 style="margin:0;">{{ isr_percent }}%</h1>
                 <p style="margin:0;">ISR Sesuai Target</p>
+            </div>
+        </div>
+        
+        <!-- Card 5 -->
+        <div style="background:#1e293b; padding:8px; border-radius:8px; display:flex; align-items:center; gap:12px;">
+            <img src="/static/6.png" alt="Kab/Kota Termonitor" style="width:36px; height:36px;">
+            <div>
+                <h1 style="margin:0;">{{ persen_kota_termonitor }}%</h1>
+                <p style="margin:0;">Kab/Kota Termonitor</p>
             </div>
         </div>
     </div>
@@ -1005,6 +1013,7 @@ def index():
     total_data=total_data,
     berizin_percent=berizin_percent,
     offair_percent=offair_percent,
+    persen_kota_termonitor = persen_kota_termonitor,
     teridentifikasi_count=teridentifikasi_count,
     isr_percent=isr_percent,
     jumlah_pelanggaran=jumlah_pelanggaran,
@@ -1045,12 +1054,8 @@ def get_cat(spt, kab, kec):
     cat_options = sorted(df["scan_catatan"].dropna().unique().tolist())
     return {"cat_list": cat_options}
 
-
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=80)
-
-
-
+    app.run(host="0.0.0.0", port=443)
 
 
 
