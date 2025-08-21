@@ -1139,6 +1139,7 @@ def index():
     pie_pantib_json=pie_pantib_json,
     bar_pantib_json=bar_pantib_json,
     sudah_inspeksi = sudah_inspeksi,
+    total_inspeksi = total_inspeksi,
     capaian_inspeksi = capaian_inspeksi,
     pie_inspeksi_json=pie_inspeksi_json,
     bar_inspeksi_json=bar_inspeksi_json
@@ -1176,6 +1177,7 @@ def get_cat(spt, kab, kec):
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=80)
+
 
 
 
