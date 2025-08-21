@@ -469,7 +469,7 @@ def index():
         bar_inspeksi = px.bar(
             bar_inspeksi_status, x="Status", y="Jumlah", color="Status",
             title="Jumlah Pelanggaran Inspeksi",
-            color_discrete_sequence=["#006db0", "#edbc1b", "#8f181b", "#00ade6", "#EF4444", "#6B7280",
+            color_discrete_sequence=["#edbc1b", "#8f181b", "#006db0", "#00ade6", "#EF4444", "#6B7280",
                                      "#6d98b3", "#91cfe3", "#af8703", "#a83639", "#575759", "#252526",
                                      "#044065", "#d5ad2b", "#884a4c"]
         )
@@ -1072,8 +1072,8 @@ def index():
         <div style="flex:1; min-width:200px; background:#1e293b; padding:15px; border-radius:8px; display:flex; align-items:center; gap:10px;">
             <div style="font-size:2rem;">📊</div>
             <div>
-                <h1 style="margin:0;">{{ capaian_inspeksi }}%</h1>
-                <p>Capaian Inspeksi</p>
+                <h1 style="margin:0;">{{ total_inspeksi }}</h1>
+                <p>Total Inspeksi</p>
             </div>
         </div>
         <div style="flex:1; min-width:200px; background:#1e293b; padding:15px; border-radius:8px; display:flex; align-items:center; gap:10px;">
@@ -1176,7 +1176,6 @@ def get_cat(spt, kab, kec):
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=80)
-
 
 
 
