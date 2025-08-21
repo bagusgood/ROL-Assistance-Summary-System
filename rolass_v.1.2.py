@@ -468,7 +468,7 @@ def index():
     
         bar_inspeksi = px.bar(
             bar_inspeksi_status, x="Status", y="Jumlah", color="Status",
-            title="Jumlah Hasil Inspeksi",
+            title="Jumlah Pelanggaran Inspeksi",
             color_discrete_sequence=["#006db0", "#edbc1b", "#8f181b", "#00ade6", "#EF4444", "#6B7280",
                                      "#6d98b3", "#91cfe3", "#af8703", "#a83639", "#575759", "#252526",
                                      "#044065", "#d5ad2b", "#884a4c"]
@@ -1176,6 +1176,7 @@ def get_cat(spt, kab, kec):
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=80)
+
 
 
 
