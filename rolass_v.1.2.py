@@ -46,7 +46,38 @@ def load_data():
     except Exception as e:
         print("Gagal ambil data API:", e)
         return pd.DataFrame()
-    
+
+def load_info_inspeksi():
+    url = "https://apstard.postel.go.id/dashboard/info-inspeksi-3"
+
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36 Edg/139.0.0.0",
+        "Accept": "application/json, text/javascript, */*; q=0.01",
+        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+        "X-Requested-With": "XMLHttpRequest",
+        "Referer": "https://apstard.postel.go.id/dashboard/dashboard-keseluruhan-upt",
+        # 🔴 Cookie perlu diganti sesuai hasil loginmu
+        "Cookie": "csrf_cookie_name=130a5f593c00deef94f76eff425ae17c; ci_session=a70s64f63e2tkmdfm0s2dab9mb1f22ho",
+    }
+
+    payload = {
+        "periode": "2025",
+        "upt_id": "14"
+    }
+
+    r = requests.post(url, headers=headers, data=payload)
+    if r.status_code != 200:
+        print("Request gagal:", r.status_code, r.text)
+        return pd.DataFrame()
+
+    data = r.json()
+    print("✅ Response diterima:", data)
+
+    # Convert ke DataFrame
+    df = pd.DataFrame([data])
+    return df
+
+
 def load_pantib():
     url = "https://rol.postel.go.id/api/penertiban/list"
 
@@ -126,12 +157,9 @@ def download_excel():
 
     try:
         # === Load ISR & Samakan Format ===
-        # Cari folder tempat rolass_v.1.py berada
         base_dir = os.path.dirname(os.path.abspath(__file__))
-        
-        # Buat path absolut ke file CSV
         isr_path = os.path.join(base_dir, "Data Target Monitor ISR 2025 - Mataram.csv")
-        
+    
         # Load CSV
         df_ISR = pd.read_csv(isr_path, on_bad_lines='skip', delimiter=';') \
                     .rename(columns={'Freq': 'Frekuensi', 'Clnt Name': 'Identifikasi'})
@@ -143,26 +171,33 @@ def download_excel():
             df_ISR = df_ISR[df_ISR['Kab/Kota'].astype(str).str.strip().str.upper() == selected_kab.strip().upper()]
     
         # === Hitung kesesuaian dengan ISR ===
-        freq_df1 = filt.groupby(['observasi_frekuensi','observasi_sims_client_name']).size().reset_index(name='Jumlah_df1')
-        freq_df1 = freq_df1.rename(columns={'observasi_frekuensi': 'Frekuensi',
-                                            'observasi_sims_client_name': 'Identifikasi'})
-        freq_df2 = df_ISR.groupby(['Frekuensi','Identifikasi']).size().reset_index(name='Jumlah_df2')
+        freq_df1 = filt.groupby(
+            ['observasi_frekuensi','observasi_sims_client_name','observasi_kota_nama']
+        ).size().reset_index(name='Jumlah_df1')
     
-        merged = pd.merge(freq_df1, freq_df2, on=['Frekuensi','Identifikasi'], how='inner') \
-                    .drop_duplicates(subset=['Frekuensi','Identifikasi'])
-        jumlah_sesuai_isr = len(merged)
-    
-        # === Load Target ISR & Hitung Persentase ===
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        csv_path = os.path.join(base_dir, "target_kota2.csv")
+        freq_df1 = freq_df1.rename(columns={
+            'observasi_frekuensi': 'Frekuensi',
+            'observasi_sims_client_name': 'Identifikasi',
+            'observasi_kota_nama': 'Kab/Kota'
+        })
+
+        freq_df2 = df_ISR.groupby(['Frekuensi','Identifikasi','Kab/Kota']).size().reset_index(name='Jumlah_df2')
         
-        df_target_kota = pd.read_csv(csv_path, delimiter=';', on_bad_lines='skip')
-        df_target_kota['Kabupaten/Kota'] = df_target_kota['Kabupaten/Kota'].astype(str).str.strip().str.upper()
-    
+        # Hapus duplikat, hanya sisakan satu per kombinasi Frekuensi & Identifikasi
+        merged = pd.merge(freq_df1, freq_df2, on=['Frekuensi', 'Identifikasi','Kab/Kota'], how='inner')
+        
+        jumlah_sesuai_isr = len(merged)
+
+        # Ambil kota yang termonitor dari data observasi
         kota_termonitor = filt['observasi_kota_nama'].dropna().astype(str).str.strip().str.upper().unique()
-        target_match = df_target_kota[df_target_kota['Kabupaten/Kota'].isin(kota_termonitor)]
+
+        # Filter target ISR berdasarkan kota termonitor
+        target_match = df_ISR[df_ISR['Kab/Kota'].str.strip().str.upper().isin(kota_termonitor)]
     
-        jumlah_target_isr = int(target_match['Jumlah ISR'].sum()) if not target_match.empty else 0
+        # Hitung target ISR total (jumlah baris, karena tidak ada kolom "Jumlah ISR")
+        jumlah_target_isr = len(target_match) if not target_match.empty else 0
+
+        # Hitung persen kesesuaian
         persen_sesuai_isr = round((jumlah_sesuai_isr / jumlah_target_isr * 100), 2) if jumlah_target_isr > 0 else 0
     
     except Exception as e:
@@ -395,8 +430,56 @@ def download_excel():
 
 @app.route("/", methods=["GET", "POST"])
 def index():
+    # === Load Info Inspeksi ===
+    df_inspeksi = load_info_inspeksi()
+    
+    if not df_inspeksi.empty:
+        total_inspeksi = int(df_inspeksi["total_inspeksi"].iloc[0].replace(",", ""))
+        sudah_inspeksi = int(df_inspeksi["sudah_inspeksi"].iloc[0].replace(",", ""))
+        belum_inspeksi = int(df_inspeksi["belum_inspeksi"].iloc[0].replace(",", ""))
+        sesuai = int(df_inspeksi["sesuai"].iloc[0].replace(",", ""))
+        tidak_sesuai = int(df_inspeksi["tidak_sesuai"].iloc[0].replace(",", ""))
+        ilegal = int(df_inspeksi["ilegal"].iloc[0].replace(",", ""))
+        off_air = int(df_inspeksi["off_air"].iloc[0].replace(",", ""))
+    
+        capaian_inspeksi = round((sudah_inspeksi / total_inspeksi * 100), 2) if total_inspeksi > 0 else 0
+    
+        # Data untuk chart
+        pie_inspeksi_status = pd.DataFrame({
+            "Status": ["Sesuai", "Tidak Sesuai", "Ilegal", "Off Air"],
+            "Jumlah": [sesuai, tidak_sesuai, ilegal, off_air]
+        })
+    
+        # Data untuk chart
+        bar_inspeksi_status = pd.DataFrame({
+            "Status": ["Tidak Sesuai", "Ilegal"],
+            "Jumlah": [tidak_sesuai, ilegal]
+        })
+    
+        pie_inspeksi = px.pie(
+            pie_inspeksi_status, names="Status", values="Jumlah",
+            title="Distribusi Hasil Inspeksi",
+            hole=0.4,
+            color_discrete_sequence=["#006db0", "#00ade6", "#edbc1b", "#8f181b", "#EF4444", "#6B7280",
+                                     "#6d98b3", "#91cfe3", "#af8703", "#a83639", "#575759", "#252526",
+                                     "#044065", "#d5ad2b", "#884a4c"]
+        )
+        pie_inspeksi.update_layout(legend=dict(orientation="v", x=1, y=0.5))
+    
+        bar_inspeksi = px.bar(
+            bar_inspeksi_status, x="Status", y="Jumlah", color="Status",
+            title="Jumlah Hasil Inspeksi",
+            color_discrete_sequence=["#006db0", "#edbc1b", "#8f181b", "#00ade6", "#EF4444", "#6B7280",
+                                     "#6d98b3", "#91cfe3", "#af8703", "#a83639", "#575759", "#252526",
+                                     "#044065", "#d5ad2b", "#884a4c"]
+        )
+    else:
+        total_inspeksi = sudah_inspeksi = capaian_inspeksi = 0
+        pie_inspeksi = bar_inspeksi = {}
+    
+    
+    ############PENERTIBANNNNNNNNNN
     df_pantib = load_pantib()
-
     # Card 1: jumlah pelanggaran
     jumlah_pelanggaran = len(df_pantib["no"].dropna())
     
@@ -479,17 +562,14 @@ def index():
     jumlah_kota_termonitor = df['observasi_kota_nama'].nunique()
     
     # Hitung persentase kab/kota termonitor
-    persen_kota_termonitor = round((jumlah_kota_termonitor / 10) * 100, 1)
+    persen_kota_termonitor = int((jumlah_kota_termonitor / 10) * 100)
 
     
     try:
         # === Load ISR & Samakan Format ===
-        # Cari folder tempat rolass_v.1.py berada
         base_dir = os.path.dirname(os.path.abspath(__file__))
-        
-        # Buat path absolut ke file CSV
         isr_path = os.path.join(base_dir, "Data Target Monitor ISR 2025 - Mataram.csv")
-        
+    
         # Load CSV
         df_ISR = pd.read_csv(isr_path, on_bad_lines='skip', delimiter=';') \
                     .rename(columns={'Freq': 'Frekuensi', 'Clnt Name': 'Identifikasi'})
@@ -501,34 +581,40 @@ def index():
             df_ISR = df_ISR[df_ISR['Kab/Kota'].astype(str).str.strip().str.upper() == selected_kab.strip().upper()]
     
         # === Hitung kesesuaian dengan ISR ===
-        freq_df1 = filt.groupby(['observasi_frekuensi','observasi_sims_client_name']).size().reset_index(name='Jumlah_df1')
-        freq_df1 = freq_df1.rename(columns={'observasi_frekuensi': 'Frekuensi',
-                                            'observasi_sims_client_name': 'Identifikasi'})
-        freq_df2 = df_ISR.groupby(['Frekuensi','Identifikasi']).size().reset_index(name='Jumlah_df2')
+        freq_df1 = filt.groupby(
+            ['observasi_frekuensi','observasi_sims_client_name','observasi_kota_nama']
+        ).size().reset_index(name='Jumlah_df1')
     
-        merged = pd.merge(freq_df1, freq_df2, on=['Frekuensi', 'Identifikasi'], how='inner')
+        freq_df1 = freq_df1.rename(columns={
+            'observasi_frekuensi': 'Frekuensi',
+            'observasi_sims_client_name': 'Identifikasi',
+            'observasi_kota_nama': 'Kab/Kota'
+        })
+
+        freq_df2 = df_ISR.groupby(['Frekuensi','Identifikasi','Kab/Kota']).size().reset_index(name='Jumlah_df2')
         
         # Hapus duplikat, hanya sisakan satu per kombinasi Frekuensi & Identifikasi
-        merged = merged.drop_duplicates(subset=['Frekuensi', 'Identifikasi'])
+        merged = pd.merge(freq_df1, freq_df2, on=['Frekuensi', 'Identifikasi','Kab/Kota'], how='inner')
         
         jumlah_sesuai_isr = len(merged)
 
-        # === Load Target ISR & Hitung Persentase ===
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        csv_path = os.path.join(base_dir, "target_kota2.csv")
-        
-        df_target_kota = pd.read_csv(csv_path, delimiter=';', on_bad_lines='skip')
-        df_target_kota['Kabupaten/Kota'] = df_target_kota['Kabupaten/Kota'].astype(str).str.strip().str.upper()
-    
+
+        # Ambil kota yang termonitor dari data observasi
         kota_termonitor = filt['observasi_kota_nama'].dropna().astype(str).str.strip().str.upper().unique()
-        target_match = df_target_kota[df_target_kota['Kabupaten/Kota'].isin(kota_termonitor)]
+
+        # Filter target ISR berdasarkan kota termonitor
+        target_match = df_ISR[df_ISR['Kab/Kota'].str.strip().str.upper().isin(kota_termonitor)]
     
-        jumlah_target_isr = int(target_match['Jumlah ISR'].sum()) if not target_match.empty else 0
+        # Hitung target ISR total (jumlah baris, karena tidak ada kolom "Jumlah ISR")
+        jumlah_target_isr = len(target_match) if not target_match.empty else 0
+
+        # Hitung persen kesesuaian
         persen_sesuai_isr = round((jumlah_sesuai_isr / jumlah_target_isr * 100), 2) if jumlah_target_isr > 0 else 0
     
     except Exception as e:
         print("Gagal hitung kesesuaian ISR:", e)
         jumlah_sesuai_isr, jumlah_target_isr, persen_sesuai_isr = 0, 0, 0
+
 
     # Persentase ISR sesuai target (sementara contoh statis)
     isr_percent = persen_sesuai_isr
@@ -669,14 +755,14 @@ def index():
     )
 
     for fig in [pie1]:
-        for fig in [pie1, pie_band, bar1, bar1_pita, pie_pantib, bar_pantib]:
+        for fig in [pie1, pie_band, bar1, bar1_pita, pie_pantib, bar_pantib, pie_inspeksi, bar_inspeksi]:
             fig.update_layout(
                 paper_bgcolor="#1e293b",  # background luar chart
                 plot_bgcolor="#1e293b",   # background area plot
                 font=dict(color="white")  # teks jadi putih
             )
         
-    for fig in [pie_band, bar1, bar1_pita, pie_pantib, bar_pantib]:
+    for fig in [pie_band, bar1, bar1_pita, pie_pantib, bar_pantib, pie_inspeksi, bar_inspeksi]:
         fig.update_layout(
             paper_bgcolor="#1e293b",
             plot_bgcolor="#1e293b",
@@ -698,7 +784,9 @@ def index():
     bar1_pita_json = json.dumps(bar1_pita, cls=plotly.utils.PlotlyJSONEncoder)
     pie_pantib_json = json.dumps(pie_pantib, cls=PlotlyJSONEncoder)
     bar_pantib_json = json.dumps(bar_pantib, cls=PlotlyJSONEncoder)
-
+    
+    pie_inspeksi_json = json.dumps(pie_inspeksi, cls=PlotlyJSONEncoder)
+    bar_inspeksi_json = json.dumps(bar_inspeksi, cls=PlotlyJSONEncoder)
     
     return render_template_string('''
     <!DOCTYPE html>
@@ -978,13 +1066,29 @@ def index():
         <div class="chart-container" id="pie_pantib"></div>
         <div class="chart-container" id="bar_pantib"></div>
     </div>
-    
-    <script>
-        var piePantib = {{ pie_pantib_json|safe }};
-        var barPantib = {{ bar_pantib_json|safe }};
-        Plotly.newPlot('pie_pantib', piePantib.data, piePantib.layout, {responsive:true});
-        Plotly.newPlot('bar_pantib', barPantib.data, barPantib.layout, {responsive:true});
-    </script>
+        
+    <!-- Info Cards Inspeksi -->
+    <div style="display:flex; gap:15px; padding:20px; flex-wrap:wrap;">
+        <div style="flex:1; min-width:200px; background:#1e293b; padding:15px; border-radius:8px; display:flex; align-items:center; gap:10px;">
+            <div style="font-size:2rem;">📊</div>
+            <div>
+                <h1 style="margin:0;">{{ capaian_inspeksi }}%</h1>
+                <p>Capaian Inspeksi</p>
+            </div>
+        </div>
+        <div style="flex:1; min-width:200px; background:#1e293b; padding:15px; border-radius:8px; display:flex; align-items:center; gap:10px;">
+            <div style="font-size:2rem;">🔍</div>
+            <div>
+                <h1 style="margin:0;">{{ sudah_inspeksi }}</h1>
+                <p>Sudah Inspeksi</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="chart-row">
+        <div class="chart-container" id="pie_inspeksi"></div>
+        <div class="chart-container" id="bar_inspeksi"></div>
+    </div>
 
     <script>
         Plotly.newPlot("pie1", {{ pie1_json|safe }}.data, {{ pie1_json|safe }}.layout, {responsive: true});
@@ -993,9 +1097,21 @@ def index():
         Plotly.newPlot("bar1", {{ bar1_json|safe }}.data, {{ bar1_json|safe }}.layout, {responsive: true});
     </script>
     
+    <script>
+        var piePantib = {{ pie_pantib_json|safe }};
+        var barPantib = {{ bar_pantib_json|safe }};
+        Plotly.newPlot('pie_pantib', piePantib.data, piePantib.layout, {responsive:true});
+        Plotly.newPlot('bar_pantib', barPantib.data, barPantib.layout, {responsive:true});
+    </script>
+    
+    <script>
+        var pieInspeksi = {{ pie_inspeksi_json|safe }};
+        var barInspeksi = {{ bar_inspeksi_json|safe }};
+        Plotly.newPlot('pie_inspeksi', pieInspeksi.data, pieInspeksi.layout, {responsive:true});
+        Plotly.newPlot('bar_inspeksi', barInspeksi.data, barInspeksi.layout, {responsive:true});
+    </script>
+    
     </body>
-
-
     </html>
     ''',
     spt_options=spt_options,
@@ -1021,7 +1137,11 @@ def index():
     pie_pantib=pie_pantib.to_html(full_html=False),
     bar_pantib=bar_pantib.to_html(full_html=False),
     pie_pantib_json=pie_pantib_json,
-    bar_pantib_json=bar_pantib_json
+    bar_pantib_json=bar_pantib_json,
+    sudah_inspeksi = sudah_inspeksi,
+    capaian_inspeksi = capaian_inspeksi,
+    pie_inspeksi_json=pie_inspeksi_json,
+    bar_inspeksi_json=bar_inspeksi_json
     )
     
 @app.route("/get_kab/<spt>")
@@ -1056,7 +1176,6 @@ def get_cat(spt, kab, kec):
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=80)
-
 
 
 
