@@ -240,7 +240,8 @@ def unduh_laporan():
     
 
     # === Kop Surat ===
-    logo = Image("logo-kominfo.png", width=70, height=70)
+    logo_path = os.path.join(app.static_folder, "logo-kominfo.png")
+    logo = Image(logo_path, width=70, height=70)
     kop_text = [
         Paragraph("<b>KEMENTERIAN KOMUNIKASI DAN INFORMATIKA RI</b>", style_left_h1b),
         Paragraph("DIREKTORAT JENDERAL SUMBER DAYA DAN PERANGKAT POS DAN INFORMATIKA", style_left_h3b),
@@ -1579,6 +1580,7 @@ def get_cat(spt, kab, kec):
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=80)
+
 
 
 
