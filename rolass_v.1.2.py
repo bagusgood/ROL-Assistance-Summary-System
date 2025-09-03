@@ -214,9 +214,9 @@ def unduh_laporan():
     pdfmetrics.registerFont(UnicodeCIDFont('HeiseiMin-W3'))
     #pdfmetrics.registerFont(TTFont("BrushScript", "BRUSHSCI.ttf"))
     pdfmetrics.registerFont(TTFont("BrushScript", r"C:\Users\BALMON_MATARAM\ROL-Assistance-Summary-System\BRUSHSCI.ttf"))
-    pdfmetrics.registerFont(TTFont("zph", "bodoni-six-itc-bold-italic-os-5871d33e4dc4a.ttf"))
-    pdfmetrics.registerFont(TTFont("Arial", "arial.ttf"))
-    pdfmetrics.registerFont(TTFont("Arialbd", "arialbd.ttf"))
+    pdfmetrics.registerFont(TTFont("zph", r"C:\Users\BALMON_MATARAM\ROL-Assistance-Summary-System\"bodoni-six-itc-bold-italic-os-5871d33e4dc4a.ttf"))
+    pdfmetrics.registerFont(TTFont("Arial", r"C:\Users\BALMON_MATARAM\ROL-Assistance-Summary-System\"ARIAL.ttf"))
+    pdfmetrics.registerFont(TTFont("Arialbd", r"C:\Users\BALMON_MATARAM\ROL-Assistance-Summary-System\"ARIALBD.ttf"))
 
     # Simpan sementara
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
@@ -1579,6 +1579,7 @@ def get_cat(spt, kab, kec):
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=443)
+
 
 
 
