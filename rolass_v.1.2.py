@@ -240,9 +240,19 @@ def unduh_laporan():
     
 
     # === Kop Surat ===
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    logo_path = os.path.join(base_dir, "static", "logo-kominfo.png")
-    logo = Image(logo_path, width=70, height=70)
+    from pathlib import Path
+    
+    base_dir = Path(__file__).resolve().parent
+    logo_path = base_dir / "static" / "logo-kominfo.png"
+    
+    print("LOGO PATH:", logo_path)
+    print("EXISTS?", logo_path.exists())
+    
+    if logo_path.exists():
+        logo = Image(str(logo_path), width=70, height=70)
+    else:
+        # fallback kalau file tidak ada
+        logo = Paragraph("LOGO TIDAK DITEMUKAN", style_center)
 
     kop_text = [
         Paragraph("<b>KEMENTERIAN KOMUNIKASI DAN INFORMATIKA RI</b>", style_left_h1b),
@@ -1569,6 +1579,7 @@ def get_cat(spt, kab, kec):
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=80)
+
 
 
 
