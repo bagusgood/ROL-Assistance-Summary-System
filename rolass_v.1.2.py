@@ -329,19 +329,6 @@ def unduh_laporan():
     content.append(PageBreak())
     
     # === Kop Surat ===
-    logo = Image("logo-kominfo.png", width=70, height=70)
-    kop_text = [
-        Paragraph("<b>KEMENTERIAN KOMUNIKASI DAN INFORMATIKA RI</b>", style_left_h1b),
-        Paragraph("DIREKTORAT JENDERAL SUMBER DAYA DAN PERANGKAT POS DAN INFORMATIKA", style_left_h3b),
-        Paragraph("BALAI MONITOR SPEKTRUM FREKUENSI RADIO KELAS II MATARAM", style_left_h3b),
-        Paragraph("Indonesia Terkoneksi : Makin Digital, Makin Maju", style_left_h2b),
-        Paragraph("Jl.Singosari No.4 Mataram 83127 Telp.(0370) 646411 Fax.(0370) 648740-42 email: upt_mataram.postel.go.id", style_left_h4b)
-    ]
-    kop_table = Table([[logo, kop_text]], colWidths=[70, 430])
-    kop_table.setStyle(TableStyle([
-        ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
-        ("LINEBELOW", (0,0), (-1,-1), 2, colors.blue)
-    ]))
     content.append(kop_table)
     content.append(Spacer(1, 20))        
         
@@ -1580,6 +1567,7 @@ def get_cat(spt, kab, kec):
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=80)
+
 
 
 
