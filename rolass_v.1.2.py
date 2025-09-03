@@ -259,7 +259,7 @@ def unduh_laporan():
     content.append(Paragraph("<b>NOTA DINAS</b>", style_center))
     # ambil bulan/tahun sekarang
     bulan_tahun = datetime.now().strftime("%m/%Y")
-    content.append(Paragraph(f"<b>Nomor :        /ND/Montib/{bulan_tahun}</b>", style_center2))
+    content.append(Paragraph(f"<b>Nomor :&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/ND/Montib/{bulan_tahun}</b>", style_center2))
     content.append(Spacer(1, 20))
 
     # === Tabel Yth ===
@@ -1578,6 +1578,7 @@ def get_cat(spt, kab, kec):
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=443)
+
 
 
 
