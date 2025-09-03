@@ -249,7 +249,7 @@ def unduh_laporan():
     print("EXISTS?", logo_path.exists())
     
     if logo_path.exists():
-        logo = Image(str(logo_path), width=70, height=70)
+        logo = Image(str("COBA DULU"), width=70, height=70)
     else:
         # fallback kalau file tidak ada
         logo = Paragraph("LOGO TIDAK DITEMUKAN", style_center)
@@ -1579,6 +1579,7 @@ def get_cat(spt, kab, kec):
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=80)
+
 
 
 
