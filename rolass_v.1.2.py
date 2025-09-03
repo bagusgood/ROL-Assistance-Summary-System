@@ -5,17 +5,25 @@ import plotly.express as px
 import plotly
 import json
 from flask import send_file
-import io
 from openpyxl import Workbook
-from openpyxl.styles import Alignment
 from openpyxl.utils import get_column_letter
-import os
 import re
 from plotly.utils import PlotlyJSONEncoder
 from openpyxl.worksheet.page import PageMargins
 from openpyxl.worksheet.pagebreak import Break
 from openpyxl.styles import Alignment, Border, Side
 from openpyxl.styles import PatternFill
+import os, tempfile
+from datetime import datetime
+from reportlab.lib.pagesizes import A4
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, Table, TableStyle, PageBreak
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY, TA_LEFT
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.cidfonts import UnicodeCIDFont
+from reportlab.lib import colors
+from reportlab.pdfbase.ttfonts import TTFont
+import locale
 
 app = Flask(__name__)
 
@@ -115,6 +123,292 @@ def load_pantib():
 
     return pd.DataFrame(all_data)
 
+
+def format_tanggal_indonesia(tgl_raw):
+    bulan_map = {
+        "January": "Januari", "February": "Februari", "March": "Maret",
+        "April": "April", "May": "Mei", "June": "Juni",
+        "July": "Juli", "August": "Agustus", "September": "September",
+        "October": "Oktober", "November": "November", "December": "Desember"
+    }
+
+    try:
+        # parse string YYYY-MM-DD
+        dt = datetime.strptime(tgl_raw, "%Y-%m-%d")
+        # cek OS (Windows pakai %#d, Linux pakai %-d)
+        try:
+            day_str = dt.strftime("%-d")   # Linux/Unix
+        except:
+            day_str = dt.strftime("%#d")  # Windows
+        month_str = dt.strftime("%B")
+        year_str = dt.strftime("%Y")
+
+        # ganti bulan ke bahasa Indonesia
+        month_str = bulan_map.get(month_str, month_str)
+
+        return f"{day_str} {month_str} {year_str}"
+    except Exception:
+        return tgl_raw  # fallback kalau parsing gagal
+
+
+@app.route("/unduh_laporan", methods=["GET", "POST"])
+def unduh_laporan():       
+    df = load_data()
+
+    # Transformasi jenis identifikasi
+    df["observasi_status_identifikasi_name"] = df["observasi_status_identifikasi_name"].str.replace(
+        r"OFF AIR \(Sedang Tidak Digunakan\)", "OFF AIR", regex=True
+    )
+    df['jenis'] = df['observasi_status_identifikasi_name'].apply(
+        lambda x: 'Belum Teridentifikasi' if x == 'BELUM DIKETAHUI' else 'Teridentifikasi'
+    )
+    
+    locale.setlocale(locale.LC_TIME, "id_ID.utf8")  # aktifkan format tanggal bahasa Indonesia
+    tanggal_skrg = datetime.now().strftime("%d %B %Y")
+
+    # Ambil filter dari form (POST) atau query (GET)
+    if request.method == "POST":
+        selected_spt = request.form.get("spt", "Semua")
+        selected_kab = request.form.get("kab", "Semua")
+        selected_kec = request.form.get("kec", "Semua")
+        selected_cat = request.form.get("cat", "Semua")
+        pelaksana_list = request.form.getlist("pelaksana")
+        perangkat = request.form.get("perangkat", "Tetap/Transportable TCI")
+        tgl_spt_raw = request.form.get("tgl_spt")
+        if tgl_spt_raw:
+                tgl_spt = format_tanggal_indonesia(tgl_spt_raw)
+        else:
+                tgl_spt = format_tanggal_indonesia(datetime.now().strftime("%Y-%m-%d"))
+        
+    else:
+        selected_spt = request.args.get("spt", "Semua")
+        selected_kab = request.args.get("kab", "Semua")
+        selected_kec = request.args.get("kec", "Semua")
+        selected_cat = request.args.get("cat", "Semua")
+        pelaksana_list = []
+        tgl_spt = format_tanggal_indonesia(datetime.now().strftime("%Y-%m-%d"))
+        perangkat = "Tetap/Transportable TCI"
+
+    # Filter data
+    filt = df.copy()
+    if selected_spt != "Semua":
+        filt = filt[filt["observasi_no_spt"] == selected_spt]
+    if selected_kab != "Semua":
+        filt = filt[filt["observasi_kota_nama"] == selected_kab]
+    if selected_kec != "Semua":
+        filt = filt[filt["observasi_kecamatan_nama"] == selected_kec]
+    if selected_cat != "Semua":
+        filt = filt[filt["scan_catatan"] == selected_cat]
+
+    # pastikan kolom tanggal dalam bentuk datetime
+    filt["observasi_tanggal"] = pd.to_datetime(filt["observasi_tanggal"], errors="coerce")
+    
+    # ambil bulan & tahun dari data observasi
+    if not filt.empty and filt["observasi_tanggal"].notna().any():
+        bulan_tahun_obs = filt["observasi_tanggal"].dt.strftime("%B %Y").iloc[0]
+    else:
+        bulan_tahun_obs = datetime.now().strftime("%B %Y")
+
+
+    # === Registrasi font ===
+    pdfmetrics.registerFont(UnicodeCIDFont('HeiseiMin-W3'))
+    pdfmetrics.registerFont(TTFont("BrushScript", "BRUSHSCI.ttf"))
+    pdfmetrics.registerFont(TTFont("zph", "bodoni-six-itc-bold-italic-os-5871d33e4dc4a.ttf"))
+    pdfmetrics.registerFont(TTFont("Arial", "arial.ttf"))
+    pdfmetrics.registerFont(TTFont("Arialbd", "arialbd.ttf"))
+
+    # Simpan sementara
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
+    filename = tmp.name
+    doc = SimpleDocTemplate(filename, pagesize=A4,
+                            rightMargin=50, leftMargin=50,
+                            topMargin=20, bottomMargin=30)
+
+    styles = getSampleStyleSheet()
+    style_center = ParagraphStyle(name="Center", parent=styles["Normal"], alignment=TA_CENTER, fontName="Arial", fontSize=14, leading=15)
+    style_center2 = ParagraphStyle(name="Center", parent=styles["Normal"], alignment=TA_CENTER, fontName="Arialbd", fontSize=12, leading=15)
+    style_normal = ParagraphStyle(name="Normal", parent=styles["Normal"], alignment=TA_JUSTIFY, fontName="Arialbd", fontSize=12, leading=14)
+
+    style_left_h1b = ParagraphStyle(name="Left", parent=styles["Normal"], alignment=TA_LEFT, fontName="zph", fontSize=16, leading=16, textColor=colors.blue)
+    style_left_h2b = ParagraphStyle(name="Left", parent=styles["Normal"], alignment=TA_LEFT, fontName="BrushScript", fontSize=14, leading=16, textColor=colors.blue)
+    style_left_h3b = ParagraphStyle(name="Left", parent=styles["Normal"], alignment=TA_LEFT, fontName="zph", fontSize=11, leading=16, textColor=colors.blue)
+    style_left_h4b = ParagraphStyle(name="Left", parent=styles["Normal"], alignment=TA_LEFT, fontName="zph", fontSize=9, leading=16, textColor=colors.blue)
+    style_left_h4t = ParagraphStyle(name="Left", parent=styles["Normal"], alignment=TA_LEFT, fontName="Arialbd", fontSize=12, leading=14)
+
+    content = []
+    
+
+    # === Kop Surat ===
+    logo = Image("logo-kominfo.png", width=70, height=70)
+    kop_text = [
+        Paragraph("<b>KEMENTERIAN KOMUNIKASI DAN INFORMATIKA RI</b>", style_left_h1b),
+        Paragraph("DIREKTORAT JENDERAL SUMBER DAYA DAN PERANGKAT POS DAN INFORMATIKA", style_left_h3b),
+        Paragraph("BALAI MONITOR SPEKTRUM FREKUENSI RADIO KELAS II MATARAM", style_left_h3b),
+        Paragraph("Indonesia Terkoneksi : Makin Digital, Makin Maju", style_left_h2b),
+        Paragraph("Jl.Singosari No.4 Mataram 83127 Telp.(0370) 646411 Fax.(0370) 648740-42 email: upt_mataram.postel.go.id", style_left_h4b)
+    ]
+    kop_table = Table([[logo, kop_text]], colWidths=[70, 430])
+    kop_table.setStyle(TableStyle([
+        ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
+        ("LINEBELOW", (0,0), (-1,-1), 2, colors.blue)
+    ]))
+    content.append(kop_table)
+    content.append(Spacer(1, 20))        
+        
+    # === Judul ===
+    content.append(Paragraph("<b>NOTA DINAS</b>", style_center))
+    # ambil bulan/tahun sekarang
+    bulan_tahun = datetime.now().strftime("%m/%Y")
+    content.append(Paragraph(f"<b>Nomor :        /ND/Montib/{bulan_tahun}</b>", style_center2))
+    content.append(Spacer(1, 20))
+
+    # === Tabel Yth ===
+    yth_text = [
+        Paragraph("Yth", style_left_h4t),
+        Paragraph("Dari", style_left_h4t),
+        Paragraph("Hal", style_left_h4t),
+        Paragraph("Sifat", style_left_h4t),
+        Paragraph("Lampiran", style_left_h4t),
+        Paragraph("Tanggal", style_left_h4t)
+    ]
+    yth2_text = [
+        Paragraph("Kepala Balai Monitor SFR Kelas II Mataram", style_normal),
+        Paragraph("Ketua Tim Kerja Monitoring dan Penertiban SFR dan APT", style_normal),
+        Paragraph(f"Laporan Pelaksanaan Kegiatan Monitoring dan Identifikasi 15 Pita Frekuensi Radio dengan Perangkat SMFR {perangkat} Site {selected_kec}, {selected_kab} Bulan Agustus Tahun 2025", style_normal),
+        Paragraph("Biasa", style_left_h4t),
+        Paragraph("Satu bendel", style_left_h4t),
+        Paragraph(f"{tanggal_skrg}", style_left_h4t)
+    ]
+    data = [[l, ":", r] for l, r in zip(yth_text, yth2_text)]
+    yth_table = Table(data, colWidths=[70, 10, 420])
+    yth_table.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),   # rata atas
+        ("ALIGN", (0, 0), (-1, -1), "LEFT"),   # tetap rata kiri
+        ("FONTNAME", (0, 0), (-1, -1), "Helvetica"),
+        ("FONTSIZE", (0, 0), (-1, -1), 11),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+    ]))
+    content.append(yth_table)
+    content.append(Spacer(1, 20))
+    
+    # === Isi ===
+    isi = f"""
+    Dengan hormat disampaikan, bahwa berdasarkan Surat Tugas Nomor : 
+    {selected_spt}, tanggal {tgl_spt}, tentang Kegiatan 
+    Monitoring/Observasi dan Identifikasi 15 Pita Frekuensi Radio dengan Pemanfaatan 
+    Perangkat SMFR {perangkat} Bulan {bulan_tahun_obs}, 
+    terlampir kami sampaikan laporan pelaksanaan kegiatan dimaksud untuk 
+    SMFR {perangkat} Site {selected_kec}, {selected_kab}.<br/><br/>
+    
+    Demikian disampaikan, mohon arahan lebih lanjut dan atas perhatian Bapak 
+    diucapkan terimakasih.
+    """
+    content.append(Paragraph(isi, style_normal))
+    content.append(Spacer(1, 80))
+    
+
+        
+    # === TTD ===
+    style_center_block = ParagraphStyle(name="CenterBlock", parent=styles["Normal"], alignment=TA_CENTER, fontName="Arialbd", fontSize=12)
+    
+    pelaksana_list = request.form.getlist("pelaksana")
+    
+    pelaksana_table = Table(
+        [["", Paragraph("Abdy Budiman Djara", style_center_block)]],
+        colWidths=[350,150]  # sesuaikan lebar halaman
+    )
+    pelaksana_table.setStyle(TableStyle([
+        ("ALIGN", (0, 0), (-1, -1), "RIGHT")
+    ]))
+    content.append(pelaksana_table)
+    content.append(Spacer(1, 50))        
+    
+    # Tambah pemisah halaman
+    content.append(PageBreak())
+    
+    # === Kop Surat ===
+    logo = Image("logo-kominfo.png", width=70, height=70)
+    kop_text = [
+        Paragraph("<b>KEMENTERIAN KOMUNIKASI DAN INFORMATIKA RI</b>", style_left_h1b),
+        Paragraph("DIREKTORAT JENDERAL SUMBER DAYA DAN PERANGKAT POS DAN INFORMATIKA", style_left_h3b),
+        Paragraph("BALAI MONITOR SPEKTRUM FREKUENSI RADIO KELAS II MATARAM", style_left_h3b),
+        Paragraph("Indonesia Terkoneksi : Makin Digital, Makin Maju", style_left_h2b),
+        Paragraph("Jl.Singosari No.4 Mataram 83127 Telp.(0370) 646411 Fax.(0370) 648740-42 email: upt_mataram.postel.go.id", style_left_h4b)
+    ]
+    kop_table = Table([[logo, kop_text]], colWidths=[70, 430])
+    kop_table.setStyle(TableStyle([
+        ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
+        ("LINEBELOW", (0,0), (-1,-1), 2, colors.blue)
+    ]))
+    content.append(kop_table)
+    content.append(Spacer(1, 20))        
+        
+    # === Judul ===
+    content.append(Paragraph("<b>NOTA DINAS</b>", style_center))
+    content.append(Spacer(1, 20))
+
+    # === Tabel Yth ===
+    yth_text = [
+        Paragraph("Yth", style_left_h4t),
+        Paragraph("Dari", style_left_h4t),
+        Paragraph("Hal", style_left_h4t),
+        Paragraph("Sifat", style_left_h4t),
+        Paragraph("Tanggal", style_left_h4t)
+    ]
+    yth2_text = [
+        Paragraph("Ketua Tim Kerja Monitoring dan Penertiban SFR dan APT", style_normal),
+        Paragraph(f"Pelaksana Kegiatan Monitoring dan Identifikasi 15 Pita Frekuensi Radio dengan Perangkat SMFR {perangkat} Site {selected_kec}, {selected_kab}", style_normal),
+        Paragraph(f"Laporan Pelaksanaan Kegiatan Monitoring dan Identifikasi 15 Pita Frekuensi Radio dengan Perangkat SMFR {perangkat} Site {selected_kec}, {selected_kab} Bulan Agustus Tahun 2025", style_normal),
+        Paragraph("Biasa", style_left_h4t),
+        Paragraph(f"{tanggal_skrg}", style_left_h4t)
+    ]
+    data = [[l, ":", r] for l, r in zip(yth_text, yth2_text)]
+    yth_table = Table(data, colWidths=[70, 10, 420])
+    yth_table.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),   # rata atas
+        ("ALIGN", (0, 0), (-1, -1), "LEFT"),   # tetap rata kiri
+        ("FONTNAME", (0, 0), (-1, -1), "Helvetica"),
+        ("FONTSIZE", (0, 0), (-1, -1), 11),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+    ]))
+    content.append(yth_table)
+    content.append(Spacer(1, 20))
+    
+    # === Isi ===
+    isi = f"""
+    Dengan hormat disampaikan, bahwa berdasarkan Surat Tugas Nomor : 
+    {selected_spt}, tanggal {tgl_spt}, tentang Kegiatan 
+    Monitoring/Observasi dan Identifikasi 15 Pita Frekuensi Radio dengan Pemanfaatan 
+    Perangkat SMFR {perangkat} Bulan {bulan_tahun_obs}, 
+    terlampir kami sampaikan laporan pelaksanaan kegiatan dimaksud untuk 
+    SMFR {perangkat} Site {selected_kec}, {selected_kab}.<br/><br/>
+    
+    Demikian disampaikan, mohon arahan lebih lanjut dan atas perhatian Bapak 
+    diucapkan terimakasih.
+    """
+    content.append(Paragraph(isi, style_normal))
+    content.append(Spacer(1, 80))
+        
+    # === TTD ===
+    style_center_block = ParagraphStyle(name="CenterBlock", parent=styles["Normal"], alignment=TA_CENTER, fontName="Arialbd", fontSize=12)
+    
+    pelaksana_list = request.form.getlist("pelaksana")
+    
+    for p in pelaksana_list:
+        pelaksana_table = Table(
+            [["", Paragraph(p, style_center_block)]],
+            colWidths=[350,150]  # sesuaikan lebar halaman
+        )
+        pelaksana_table.setStyle(TableStyle([
+            ("ALIGN", (0, 0), (-1, -1), "RIGHT")
+        ]))
+        content.append(pelaksana_table)
+        content.append(Spacer(1, 50))
+    
+    # Build PDF
+    doc.build(content)
+    
+    return send_file(filename, as_attachment=True, download_name="Nota_Dinas.pdf")
 
 @app.route("/download_excel", methods=["POST"])
 def download_excel():
@@ -306,19 +600,21 @@ def download_excel():
 
     # Urutkan berdasarkan observasi_id
     if "observasi_id" in filt_sheet2.columns:
-        filt_sheet2 = filt_sheet2.sort_values(by="observasi_id", ascending=True)
+        filt_sheet2 = filt_sheet2.sort_values(by="observasi_frekuensi", ascending=True)
 
     # Tambahkan kolom "No" mulai dari 1
     filt_sheet2.insert(0, "No", range(1, len(filt_sheet2) + 1))
 
     # Ubah kolom Pita Frekuensi → ambil sebelum "."
-    if "observasi_range_frekuensi" in filt_sheet2.columns:
-        filt_sheet2["observasi_range_frekuensi"] = filt_sheet2["observasi_range_frekuensi"].astype(str).str.split(".").str[0]
+    #if "observasi_range_frekuensi" in filt_sheet2.columns:
+        #filt_sheet2["observasi_range_frekuensi"] = filt_sheet2["observasi_range_frekuensi"].astype(str).str.split(".").str[0]
 
     # Mapping nama kolom
     rename_map = {
         "observasi_tanggal": "Tanggal",
         "observasi_jam": "Jam",
+        "band_nama": "Band",
+        "observasi_range_frekuensi": "Pita Frekuensi",
         "observasi_frekuensi": "Frekuensi",
         "observasi_level": "Level",
         "observasi_service_name": "Dinas",
@@ -332,11 +628,12 @@ def download_excel():
         "observasi_kota_nama": "Kab/Kota",
         "observasi_propinsi_nama": "Provinsi",
         "observasi_scan_detail_lat": "Latitude",
-        "observasi_scan_detail_long": "Longitude",
-        "observasi_range_frekuensi": "Pita Frekuensi",
-        "band_nama": "Band"
+        "observasi_scan_detail_long": "Longitude"
     }
     filt_sheet2 = filt_sheet2.rename(columns=rename_map)
+    # Urutkan kolom sesuai urutan di rename_map
+    ordered_cols = list(rename_map.values())
+    filt_sheet2 = filt_sheet2[ordered_cols]
 
     # Hapus kolom tidak perlu
     drop_cols = [
@@ -390,7 +687,7 @@ def download_excel():
     ws2.page_setup.paperSize = ws2.PAPERSIZE_A4
     
     # Scale agar muat halaman (70% dari ukuran normal)
-    ws2.page_setup.scale = 55
+    ws2.page_setup.scale = 50
     
     # Atur margin
     ws2.page_margins = PageMargins(left=0.3, right=0.3, top=0.5, bottom=0.5)
@@ -1017,12 +1314,109 @@ def index():
         </div>
     
         <!-- Tombol -->
-        <div style="display:flex; align-items:flex-end; gap:10px;">
+        <div style="display:flex; align-items:flex-end; gap:10px; padding:20px; justify-content:flex-end;">
             <button type="submit" style="background:#006db0; color:white; border:none; padding:8px 14px; border-radius:6px;">🔍 Tampilkan</button>
             <button form="excel-form" type="submit" style="background:#006db0; color:white; border:none; padding:8px 14px; border-radius:6px;">⬇️ Unduh Rekap</button>
+            <button type="button" onclick="openModal()"
+                    class="btn"
+                    style="background:#006db0; color:white; padding:8px 14px; border-radius:6px; text-decoration:none;">
+               📄 Unduh Laporan
+            </button>
         </div>
     </form>
-      
+    
+
+
+    
+    <!-- Modal -->
+    <div id="laporanModal"
+         style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5);">
+      <div style="background:white; width:400px; margin:100px auto; padding:20px; border-radius:8px; position:relative;">
+        <h3>Isi Nama Pelaksana</h3>
+    
+        <!-- Form di dalam modal -->
+        <form id="laporanForm" method="POST" action="/unduh_laporan">
+          <!-- Hidden filter biar tetap terkirim -->
+          <input type="hidden" name="spt" value="{{ selected_spt }}">
+          <input type="hidden" name="kab" value="{{ selected_kab }}">
+          <input type="hidden" name="kec" value="{{ selected_kec }}">
+          <input type="hidden" name="cat" value="{{ selected_cat }}">
+          
+          <!-- Tanggal SPT -->
+          <div style="margin-bottom:10px;">
+            <label for="tgl_spt" style="font-weight:bold; display:block; margin-bottom:5px; color:#333;">
+              📅 Tanggal SPT
+            </label>
+            <input type="date" name="tgl_spt" id="tgl_spt"
+                   style="width:100%; padding:6px; border:1px solid #ccc; border-radius:5px;">
+          </div>
+          
+          <!-- Pilihan Perangkat -->
+            <div style="margin-bottom:10px;">
+              <label for="perangkat" style="font-weight:bold; display:block; margin-bottom:5px; color:#333;">
+                ⚙️ Perangkat SMFR
+              </label>
+              <select name="perangkat" id="perangkat"
+                      style="width:100%; padding:6px; border:1px solid #ccc; border-radius:5px;">
+                <option value="Tetap/Transportable TCI">Tetap/Transportable TCI</option>
+                <option value="Tetap/Transportable LS Telcom">Tetap/Transportable LS Telcom</option>
+                <option value="Bergerak R&S DDF205 Unit Mobil Isuzu Elf / Hilux Hitam">
+                  Bergerak R&S DDF205 Unit Mobil Isuzu Elf / Hilux Hitam
+                </option>
+                <option value="Bergerak R&S DDF205 Unit Mobil Hilux Silver">
+                  Bergerak R&S DDF205 Unit Mobil Hilux Silver
+                </option>
+                <option value="Jinjing R&S DDF007">Jinjing R&S DDF007</option>
+                <option value="Jinjing R&S PR100">Jinjing R&S PR100</option>
+              </select>
+            </div>
+
+          <!-- Nama Pelaksana -->
+          <div id="pelaksana-container">
+            <input type="text" name="pelaksana" placeholder="Nama Pelaksana"
+                   style="width:100%; margin-bottom:10px; padding:6px;">
+          </div>
+    
+          <!-- Tombol tambah pelaksana -->
+          <button type="button" onclick="tambahPelaksana()"
+                  style="background:#006db0; color:white; border:none; padding:6px 12px; border-radius:5px;">
+            ➕ Tambah Pelaksana
+          </button>
+    
+          <!-- Tombol aksi -->
+          <div style="margin-top:15px; text-align:right;">
+            <button type="button" onclick="closeModal()"
+                    style="background:#ccc; border:none; padding:6px 12px; border-radius:5px;">
+              Batal.
+            </button>
+            <button type="submit"
+                    style="background:#006db0; color:white; border:none; padding:8px 14px; border-radius:6px;">
+              ✅ Unduh
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+    
+    <script>
+    function openModal() {
+      document.getElementById("laporanModal").style.display = "block";
+    }
+    function closeModal() {
+      document.getElementById("laporanModal").style.display = "none";
+    }
+    function tambahPelaksana() {
+      const container = document.getElementById("pelaksana-container");
+      const input = document.createElement("input");
+      input.type = "text";
+      input.name = "pelaksana";
+      input.placeholder = "Nama Pelaksana";
+      input.style = "width:100%; margin-bottom:10px; padding:6px;";
+      container.appendChild(input);
+    }
+    </script>
+
+
     
     <!-- Form Unduh Rekap (disinkron otomatis oleh JS) -->
         <form method="POST" action="/download_excel" id="excel-form" style="display:none;">
@@ -1030,6 +1424,13 @@ def index():
           <input type="hidden" name="kab" id="excel-kab" value="{{ selected_kab }}">
           <input type="hidden" name="kec" id="excel-kec" value="{{ selected_kec }}">
           <input type="hidden" name="cat" id="excel-cat" value="{{ selected_cat }}">
+        </form>
+    
+        <form method="POST" action="/unduh_laporan">
+            <input type="hidden" name="spt" value="{{ selected_spt }}">
+            <input type="hidden" name="kab" value="{{ selected_kab }}">
+            <input type="hidden" name="kec" value="{{ selected_kec }}">
+            <input type="hidden" name="cat" value="{{ selected_cat }}">
         </form>
 
     
@@ -1176,8 +1577,7 @@ def get_cat(spt, kab, kec):
     return {"cat_list": cat_options}
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=80)
-
+    app.run(host="0.0.0.0", port=443)
 
 
 
