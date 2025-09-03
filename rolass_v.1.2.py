@@ -209,6 +209,7 @@ def unduh_laporan():
     else:
         bulan_tahun_obs = datetime.now().strftime("%B %Y")
 
+
     # === Registrasi font ===
     pdfmetrics.registerFont(UnicodeCIDFont('HeiseiMin-W3'))
     #pdfmetrics.registerFont(TTFont("BrushScript", "BRUSHSCI.ttf"))
@@ -1578,12 +1579,6 @@ def get_cat(spt, kab, kec):
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=80)
-
-
-
-
-
-
 
 
 
