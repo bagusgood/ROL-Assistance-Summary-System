@@ -31,7 +31,7 @@ import logging, os
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 logging.basicConfig(
-    filename=os.path.join(BASE_DIR, "run_log.txt"),
+    filename=os.path.join(BASE_DIR, "app_log.txt"),
     level=logging.ERROR,
     format="%(asctime)s [%(levelname)s] %(message)s"
 )
@@ -1582,6 +1582,7 @@ if __name__ == "__main__":
         app.run(host="0.0.0.0", port=80)
     except Exception as e:
         logging.exception("Flask crashed")
+
 
 
 
