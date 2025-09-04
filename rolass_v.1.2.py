@@ -26,6 +26,15 @@ from reportlab.pdfbase.ttfonts import TTFont
 import locale
 
 app = Flask(__name__)
+import logging, os
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+logging.basicConfig(
+    filename=os.path.join(BASE_DIR, "run_log.txt"),
+    level=logging.ERROR,
+    format="%(asctime)s [%(levelname)s] %(message)s"
+)
 
 # Bersihkan string agar aman untuk nama file
 def safe_filename(text):
@@ -1570,6 +1579,7 @@ def get_cat(spt, kab, kec):
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=80)
+
 
 
 
