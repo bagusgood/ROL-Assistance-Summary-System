@@ -88,7 +88,7 @@ def load_info_inspeksi():
         return pd.DataFrame()
 
     data = r.json()
-    print("✅ Response diterima:", data)
+    #print("✅ Response diterima:", data)
 
     # Convert ke DataFrame
     df = pd.DataFrame([data])
@@ -248,11 +248,11 @@ def unduh_laporan():
     content = []
     
     # === Kop Surat ===
-    #base_dir = os.path.dirname(os.path.abspath(__file__))  # folder tempat file .py berada
-    #logo_path = os.path.join(base_dir, "static", "logo-kominfo.png")
+    base_dir = os.path.dirname(os.path.abspath(__file__))  # folder tempat file .py berada
+    logo_path = os.path.join(base_dir, "static", "logo-kominfo.png")
     
-    #logo = Image(logo_path, width=70, height=70)
-    logo = "LOGO KOMINFO"
+    logo = Image(logo_path, width=70, height=70)
+    #logo = "LOGO KOMINFO"
     
     kop_text = [
         Paragraph("<b>KEMENTERIAN KOMUNIKASI DAN INFORMATIKA RI</b>", style_left_h1b),
@@ -1582,6 +1582,7 @@ if __name__ == "__main__":
         app.run(host="0.0.0.0", port=80)
     except Exception as e:
         logging.exception("Flask crashed")
+
 
 
 
