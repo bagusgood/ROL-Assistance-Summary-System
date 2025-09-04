@@ -239,11 +239,12 @@ def unduh_laporan():
     content = []
     
     # === Kop Surat ===
-    base_dir = os.path.dirname(os.path.abspath(__file__))  # folder tempat file .py berada
-    logo_path = os.path.join(base_dir, "static", "logo-kominfo.png")
+    #base_dir = os.path.dirname(os.path.abspath(__file__))  # folder tempat file .py berada
+    #logo_path = os.path.join(base_dir, "static", "logo-kominfo.png")
     
-    logo = Image(logo_path, width=70, height=70)
-
+    #logo = Image(logo_path, width=70, height=70)
+    logo = "LOGO KOMINFO"
+    
     kop_text = [
         Paragraph("<b>KEMENTERIAN KOMUNIKASI DAN INFORMATIKA RI</b>", style_left_h1b),
         Paragraph("DIREKTORAT JENDERAL SUMBER DAYA DAN PERANGKAT POS DAN INFORMATIKA", style_left_h3b),
@@ -1569,6 +1570,7 @@ def get_cat(spt, kab, kec):
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=80)
+
 
 
 
