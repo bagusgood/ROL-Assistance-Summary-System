@@ -1578,7 +1578,12 @@ def get_cat(spt, kab, kec):
     return {"cat_list": cat_options}
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=80)
+    try:
+        app.run(host="0.0.0.0", port=80)
+    except Exception as e:
+        logging.exception("Flask crashed")
+
+
 
 
 
