@@ -24,10 +24,127 @@ from reportlab.pdfbase.cidfonts import UnicodeCIDFont
 from reportlab.lib import colors
 from reportlab.pdfbase.ttfonts import TTFont
 import locale
-
-app = Flask(__name__)
+from flask import Flask, render_template_string, request, redirect, url_for, session, flash
 import logging, os
 
+app = Flask(__name__)
+app.secret_key = "rahasia_super"  # ganti dengan secret key lebih kuat
+
+# ======= USER LOGIN =======
+USERS = {
+    "balmon_mataram": "rahasia_umum",   # username: password
+    "username": "password"
+}
+
+# Middleware untuk proteksi halaman
+def login_required(f):
+    from functools import wraps
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if "username" not in session:
+            return redirect(url_for("login"))
+        return f(*args, **kwargs)
+    return decorated_function
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if request.method == "POST":
+        username = request.form.get("username")
+        password = request.form.get("password")
+
+        if username in USERS and USERS[username] == password:
+            session["username"] = username
+            flash("Login berhasil!", "success")
+            return redirect(url_for("index"))
+        else:
+            flash("Username atau password salah!", "danger")
+
+    return render_template_string("""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Login ROLASS</title>
+        <style>
+            body {
+                margin: 0;
+                padding: 0;
+                font-family: Arial, sans-serif;
+                background: url('{{ url_for("static", filename="bg-login.jpg") }}') no-repeat center center fixed;
+                background-size: cover;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                height: 100vh;
+                color: white;
+            }
+            .login-box {
+                background: rgba(0, 0, 0, 0.7);
+                padding: 30px;
+                border-radius: 12px;
+                width: 320px;
+                text-align: center;
+                box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+            }
+            .login-box h2 {
+                margin-bottom: 20px;
+                font-size: 22px;
+            }
+            .login-box input {
+                width: 100%;
+                padding: 10px;
+                margin: 10px 0;
+                border: none;
+                border-radius: 6px;
+                font-size: 14px;
+            }
+            .login-box button {
+                width: 100%;
+                padding: 10px;
+                background: #006db0;
+                border: none;
+                border-radius: 6px;
+                color: white;
+                font-weight: bold;
+                cursor: pointer;
+                transition: background 0.3s;
+            }
+            .login-box button:hover {
+                background: #004d80;
+            }
+            .flash-message {
+                margin-top: 10px;
+                color: #ff6b6b;
+                font-size: 14px;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="login-box">
+            <h2>ROL ASSISTANCE SUMMARY SYSTEM (ROLASS)</h2>
+            <form method="POST">
+                <input type="text" name="username" placeholder="Username" required>
+                <input type="password" name="password" placeholder="Password" required>
+                <button type="submit">Login</button>
+            </form>
+            {% with messages = get_flashed_messages(with_categories=true) %}
+              {% if messages %}
+                <div class="flash-message">
+                {% for category, message in messages %}
+                  <p>{{ message }}</p>
+                {% endfor %}
+                </div>
+              {% endif %}
+            {% endwith %}
+        </div>
+    </body>
+    </html>
+    """)
+
+
+@app.route("/logout")
+def logout():
+    session.pop("username", None)
+    return redirect(url_for("login"))
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 logging.basicConfig(
@@ -479,7 +596,7 @@ def download_excel():
         freq_df2 = df_ISR.groupby(['Frekuensi','Identifikasi','Kab/Kota']).size().reset_index(name='Jumlah_df2')
         
         # Hapus duplikat, hanya sisakan satu per kombinasi Frekuensi & Identifikasi
-        merged = pd.merge(freq_df1, freq_df2, on=['Frekuensi', 'Identifikasi','Kab/Kota'], how='inner')
+        merged = pd.merge(freq_df1, freq_df2, on=['Frekuensi','Kab/Kota'], how='inner')
         
         jumlah_sesuai_isr = len(merged)
 
@@ -727,6 +844,7 @@ def download_excel():
 
 
 @app.route("/", methods=["GET", "POST"])
+@login_required
 def index():
     # === Load Info Inspeksi ===
     df_inspeksi = load_info_inspeksi()
@@ -892,7 +1010,7 @@ def index():
         freq_df2 = df_ISR.groupby(['Frekuensi','Identifikasi','Kab/Kota']).size().reset_index(name='Jumlah_df2')
         
         # Hapus duplikat, hanya sisakan satu per kombinasi Frekuensi & Identifikasi
-        merged = pd.merge(freq_df1, freq_df2, on=['Frekuensi', 'Identifikasi','Kab/Kota'], how='inner')
+        merged = pd.merge(freq_df1, freq_df2, on=['Frekuensi','Kab/Kota'], how='inner')
         
         jumlah_sesuai_isr = len(merged)
 
@@ -1220,8 +1338,22 @@ def index():
             <h2 style="margin:0;">Dashboard Observasi Frekuensi – Balmon SFR Kelas II Mataram</h2/>
             <p style="margin:0; font-size:16px; color:#9ca3af;">ROL Assistance Summary System (ROLASS)</p>
         </div>
+        <!-- Tombol -->
+        <div style="display:flex; align-items:flex-end; gap:10px; padding:20px; justify-content:flex-end;">
+            <button type="submit" style="background:#006db0; color:white; border:none; padding:8px 14px; border-radius:6px;">🔄 Refresh</button>
+            <button form="excel-form" type="submit" style="background:#006db0; color:white; border:none; padding:8px 14px; border-radius:6px;">⬇️ Unduh Rekap</button>
+            <button type="button" onclick="openModal()"
+                    class="btn"
+                    style="background:#006db0; color:white; border:none; padding:8px 14px; border-radius:6px; text-decoration:none;">
+               📄 Unduh Nodin
+            </button>
+            <a href="{{ url_for('logout') }}" 
+               style="color:white; background:#49494a; padding:8px 14px; border-radius:6px; text-decoration:none;">
+               🚪 Logout
+            </a>
+        </div>
     </div>
-    
+
     <!-- Info Cards -->
     <div style="display:grid; grid-template-columns: repeat(5, 1fr); gap:15px; padding:20px;">
         
@@ -1312,17 +1444,6 @@ def index():
                 <option value="{{ cat }}" {% if cat == selected_cat %}selected{% endif %}>{{ cat }}</option>
                 {% endfor %}
             </select>
-        </div>
-    
-        <!-- Tombol -->
-        <div style="display:flex; align-items:flex-end; gap:10px; padding:20px; justify-content:flex-end;">
-            <button type="submit" style="background:#006db0; color:white; border:none; padding:8px 14px; border-radius:6px;">🔍 Tampilkan</button>
-            <button form="excel-form" type="submit" style="background:#006db0; color:white; border:none; padding:8px 14px; border-radius:6px;">⬇️ Unduh Rekap</button>
-            <button type="button" onclick="openModal()"
-                    class="btn"
-                    style="background:#006db0; color:white; padding:8px 14px; border-radius:6px; text-decoration:none;">
-               📄 Unduh Laporan
-            </button>
         </div>
     </form>
     
@@ -1582,7 +1703,6 @@ if __name__ == "__main__":
         app.run(host="0.0.0.0", port=80)
     except Exception as e:
         logging.exception("Flask crashed")
-
 
 
 
