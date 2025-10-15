@@ -1742,7 +1742,7 @@ def index():
         " 
         onmouseover="this.style.transform='scale(1.03)'; this.style.boxShadow='0 4px 12px rgba(0,0,0,0.4)';"
         onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='0 2px 6px rgba(0,0,0,0.3)';">
-            <h1 style="margin:0; color:#00ade6;">Rp.74.013.800</h1>
+            <h1 style="margin:0; color:#00ade6;">Rp.104.505.800</h1>
             <p style="margin:6px 0 0; color:#e5e7eb; font-size:18px;">Denda Terbayar</p>
         </div>
     
@@ -1757,7 +1757,7 @@ def index():
         "
         onmouseover="this.style.transform='scale(1.03)'; this.style.boxShadow='0 4px 12px rgba(0,0,0,0.4)';"
         onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='0 2px 6px rgba(0,0,0,0.3)';">
-            <h1 style="margin:0; color:#edbc1b;">Rp.30.492.000</h1>
+            <h1 style="margin:0; color:#edbc1b;">Rp.0</h1>
             <p style="margin:6px 0 0; color:#e5e7eb; font-size:18px;">Denda Belum Terbayar</p>
         </div>
     </div>
@@ -1897,4 +1897,5 @@ def get_cat(spt, kab, kec):
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=80)
+
 
