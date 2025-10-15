@@ -26,6 +26,10 @@ from reportlab.pdfbase.ttfonts import TTFont
 import locale
 from flask import Flask, render_template_string, request, redirect, url_for, session, flash
 import logging, os
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+import plotly.express as px
+import plotly.graph_objects as go
 
 app = Flask(__name__)
 app.secret_key = "rahasia_super"  # ganti dengan secret key lebih kuat
@@ -181,7 +185,7 @@ def load_data():
         print("Gagal ambil data API:", e)
         return pd.DataFrame()
 
-def load_info_inspeksi():
+def load_info_inspeksi(use_cache=True):
     url = "https://apstard.postel.go.id/dashboard/info-inspeksi-3"
 
     headers = {
@@ -190,8 +194,8 @@ def load_info_inspeksi():
         "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
         "X-Requested-With": "XMLHttpRequest",
         "Referer": "https://apstard.postel.go.id/dashboard/dashboard-keseluruhan-upt",
-        # 🔴 Cookie perlu diganti sesuai hasil loginmu
-        "Cookie": "csrf_cookie_name=130a5f593c00deef94f76eff425ae17c; ci_session=a70s64f63e2tkmdfm0s2dab9mb1f22ho",
+        # ⚠️ Cookie perlu diganti sesuai hasil login
+        "Cookie": "csrf_cookie_name=ISI_COOKIE; ci_session=ISI_SESSION",
     }
 
     payload = {
@@ -199,20 +203,35 @@ def load_info_inspeksi():
         "upt_id": "14"
     }
 
-    r = requests.post(url, headers=headers, data=payload)
-    if r.status_code != 200:
-        print("Request gagal:", r.status_code, r.text)
-        return pd.DataFrame()
+    try:
+        r = requests.post(url, headers=headers, data=payload, timeout=10)
+        r.raise_for_status()
 
-    data = r.json()
-    #print("✅ Response diterima:", data)
+        data = r.json()
 
-    # Convert ke DataFrame
-    df = pd.DataFrame([data])
-    return df
+        # Simpan ke cache lokal
+        if use_cache:
+            with open("inspeksi.json", "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+
+        return pd.DataFrame([data]), None  # DataFrame + status OK
+
+    except Exception as e:
+        print(f"⚠️ Gagal ambil data dari Apstard: {e}")
+
+        # Gunakan cache lokal kalau ada
+        if use_cache and os.path.exists("inspeksi.json"):
+            print("👉 Memuat data dari cache lokal inspeksi.json")
+            with open("inspeksi.json", "r", encoding="utf-8") as f:
+                data = json.load(f)
+            return pd.DataFrame([data]), "⚠️ Data dari cache (Apstard tidak bisa diakses)"
+
+        # Kalau tidak ada cache
+        return pd.DataFrame(), "⚠️ Aplikasi Apstard tidak bisa diakses"
 
 
-def load_pantib():
+
+def load_pantib(use_cache=True):
     url = "https://rol.postel.go.id/api/penertiban/list"
 
     headers = {
@@ -220,34 +239,57 @@ def load_pantib():
         "Accept": "application/json, text/javascript, */*; q=0.01",
         "X-Requested-With": "XMLHttpRequest",
         "Referer": "https://rol.postel.go.id/penertiban",
-        # ⚠️ Cookie harus diganti manual setiap login
-        "Cookie": "csrf_cookie_name=4d68a695308880e740aed8eb9ddaf59b; ci_session=562m00244moanb6eb57e0malktpao9vb"
+        # ⚠️ Cookie selalu berubah → kalau tidak valid, fallback ke pantib.json
+        "Cookie": "csrf_cookie_name=ISI_COOKIE; ci_session=ISI_SESSION"
     }
+
+    session = requests.Session()
+    retries = Retry(connect=3, backoff_factor=1, status_forcelist=[500, 502, 503, 504])
+    session.mount("https://", HTTPAdapter(max_retries=retries))
 
     all_data = []
     page = 1
-    page_size = 10000  
+    page_size = 1000  
 
-    while True:
-        params = {
-            "status": "",
-            "status_penertiban": "",
-            "tahun": "2025",
-            "pageIndex": page,
-            "pageSize": page_size
-        }
-        r = requests.get(url, headers=headers, params=params)
-        if r.status_code != 200:
-            print(f"Request gagal di page {page}: {r.status_code}")
-            break
+    try:
+        while True:
+            params = {
+                "status": "",
+                "status_penertiban": "",
+                "tahun": "2025",
+                "pageIndex": page,
+                "pageSize": page_size
+            }
+            r = session.get(url, headers=headers, params=params, timeout=15)
 
-        data = r.json().get("data", [])
-        if not data:
-            break
-        all_data.extend(data)
-        page += 1
+            # kalau cookie invalid → biasanya balasan HTML login page
+            if "<title>ROL Login</title>" in r.text:
+                raise Exception("Cookie expired / invalid")
+
+            data = r.json().get("data", [])
+            if not data:
+                break
+            all_data.extend(data)
+            page += 1
+
+        # simpan cache lokal
+        if use_cache:
+            with open("pantib.json", "w", encoding="utf-8") as f:
+                json.dump(all_data, f, ensure_ascii=False, indent=2)
+
+    except Exception as e:
+        print("⚠️ Gagal ambil data dari API pantib:", e)
+
+        # fallback ke cache lokal
+        if use_cache and os.path.exists("pantib.json"):
+            print("👉 Memuat data dari cache lokal pantib.json")
+            with open("pantib.json", "r", encoding="utf-8") as f:
+                all_data = json.load(f)
+        else:
+            print("⚠️ Tidak ada cache pantib.json ditemukan")
 
     return pd.DataFrame(all_data)
+
 
 
 def format_tanggal_indonesia(tgl_raw):
@@ -339,10 +381,10 @@ def unduh_laporan():
     # === Registrasi font ===
     pdfmetrics.registerFont(UnicodeCIDFont('HeiseiMin-W3'))
     #pdfmetrics.registerFont(TTFont("BrushScript", "BRUSHSCI.ttf"))
-    pdfmetrics.registerFont(TTFont("BrushScript", r"C:\Users\BALMON_MATARAM\ROL-Assistance-Summary-System\BRUSHSCI.ttf"))
-    pdfmetrics.registerFont(TTFont("zph", r"C:\Users\BALMON_MATARAM\ROL-Assistance-Summary-System\bodoni-six-itc-bold-italic-os-5871d33e4dc4a.ttf"))
-    pdfmetrics.registerFont(TTFont("Arial", r"C:\Users\BALMON_MATARAM\ROL-Assistance-Summary-System\ARIALBD.ttf"))
-    pdfmetrics.registerFont(TTFont("Arialbd", r"C:\Users\BALMON_MATARAM\ROL-Assistance-Summary-System\ARIAL.ttf"))
+    pdfmetrics.registerFont(TTFont("BrushScript", "BRUSHSCI.ttf"))
+    pdfmetrics.registerFont(TTFont("zph", "bodoni-six-itc-bold-italic-os-5871d33e4dc4a.ttf"))
+    pdfmetrics.registerFont(TTFont("Arial", "ARIALBD.ttf"))
+    pdfmetrics.registerFont(TTFont("Arialbd", "ARIAL.ttf"))
 
     # Simpan sementara
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
@@ -593,7 +635,7 @@ def download_excel():
             'observasi_kota_nama': 'Kab/Kota'
         })
 
-        freq_df2 = df_ISR.groupby(['Frekuensi','Identifikasi','Kab/Kota']).size().reset_index(name='Jumlah_df2')
+        freq_df2 = df_ISR.groupby(['Frekuensi','Kab/Kota']).size().reset_index(name='Jumlah_df2')
         
         # Hapus duplikat, hanya sisakan satu per kombinasi Frekuensi & Identifikasi
         merged = pd.merge(freq_df1, freq_df2, on=['Frekuensi','Kab/Kota'], how='inner')
@@ -729,8 +771,9 @@ def download_excel():
 
     # Mapping nama kolom
     rename_map = {
+        "no": "No",
         "observasi_tanggal": "Tanggal",
-        "observasi_jam": "Jam",
+        "observasi_jam": "Waktu",
         "band_nama": "Band",
         "observasi_range_frekuensi": "Pita Frekuensi",
         "observasi_frekuensi": "Frekuensi",
@@ -847,7 +890,7 @@ def download_excel():
 @login_required
 def index():
     # === Load Info Inspeksi ===
-    df_inspeksi = load_info_inspeksi()
+    df_inspeksi, apstard_status = load_info_inspeksi()
     
     if not df_inspeksi.empty:
         total_inspeksi = int(df_inspeksi["total_inspeksi"].iloc[0].replace(",", ""))
@@ -889,15 +932,34 @@ def index():
                                      "#6d98b3", "#91cfe3", "#af8703", "#a83639", "#575759", "#252526",
                                      "#044065", "#d5ad2b", "#884a4c"]
         )
+        
+        apstard_status = None  # Tidak ada error
     else:
         total_inspeksi = sudah_inspeksi = capaian_inspeksi = 0
-        pie_inspeksi = bar_inspeksi = {}
+        
+        # Figure kosong biar tetap kompatibel
+        pie_inspeksi = go.Figure()
+        bar_inspeksi = go.Figure()
+        
+        # Opsional: kasih text "Data tidak tersedia"
+        pie_inspeksi.add_annotation(
+            text="Data tidak tersedia",
+            showarrow=False,
+            font=dict(size=16)
+        )
+        bar_inspeksi.add_annotation(
+            text="Data tidak tersedia",
+            showarrow=False,
+            font=dict(size=16)
+        )
+    
+        apstard_status = "⚠️ Aplikasi Apstard tidak bisa diakses"
     
     
     ############PENERTIBANNNNNNNNNN
     df_pantib = load_pantib()
     # Card 1: jumlah pelanggaran
-    jumlah_pelanggaran = len(df_pantib["no"].dropna())
+    jumlah_pelanggaran = len(df_pantib)
     
     # Card 2: persentase telah ditertibkan
     total_data = len(df_pantib)
@@ -906,9 +968,12 @@ def index():
 
     df = load_data()
     # Tambahkan kolom jenis
-    df['jenis'] = df['observasi_status_identifikasi_name'].apply(
-        lambda x: 'Belum Teridentifikasi' if x == 'BELUM DIKETAHUI' else 'Teridentifikasi'
-    )
+    if 'observasi_status_identifikasi_name' in df.columns:
+        df['jenis'] = df['observasi_status_identifikasi_name'].apply(
+            lambda x: 'Belum Teridentifikasi' if x == 'BELUM DIKETAHUI' else 'Teridentifikasi'
+        )
+    else:
+        df['jenis'] = None  # atau default lain
 
     if df.empty:
         return "Data tidak tersedia. Periksa koneksi API atau cookie."
@@ -1007,7 +1072,7 @@ def index():
             'observasi_kota_nama': 'Kab/Kota'
         })
 
-        freq_df2 = df_ISR.groupby(['Frekuensi','Identifikasi','Kab/Kota']).size().reset_index(name='Jumlah_df2')
+        freq_df2 = df_ISR.groupby(['Frekuensi','Kab/Kota']).size().reset_index(name='Jumlah_df2')
         
         # Hapus duplikat, hanya sisakan satu per kombinasi Frekuensi & Identifikasi
         merged = pd.merge(freq_df1, freq_df2, on=['Frekuensi','Kab/Kota'], how='inner')
@@ -1170,15 +1235,67 @@ def index():
                                  "#044065", "#d5ad2b", "#884a4c"]
     )
 
+    # === PENANGANAN DENDA ===
+    denda_terbayar = 74013800
+    denda_belum = 130492000
+    
+    # Card total
+    total_denda = denda_terbayar + denda_belum
+    
+    # Data untuk Pie Chart (status pembayaran)
+    pie_denda_status = pd.DataFrame({
+        "Status": ["Denda Terbayar", "Belum Terbayar"],
+        "Jumlah": [29, 1]
+    })
+    pie_denda = px.pie(
+        pie_denda_status,
+        names="Status",
+        values="Jumlah",
+        title="Status Pembayaran Denda",
+        hole=0.5,
+        color_discrete_sequence=["#00ade6", "#edbc1b"]
+    )
+    pie_denda.update_layout(
+        paper_bgcolor="#1e293b",
+        plot_bgcolor="#1e293b",
+        font=dict(color="white"),
+        legend=dict(orientation="h", yanchor="top", y=-0.2, xanchor="center", x=0.5)
+    )
+    
+    # Data untuk Bar Chart (berdasarkan dinas)
+    bar_denda_dinas = pd.DataFrame({
+        "Dinas": ["Point to Point", "Point to Multipoint", "Bergerak Darat"],
+        "Jumlah": [3, 6, 21]
+    })
+    bar_denda = px.bar(
+        bar_denda_dinas,
+        x="Dinas",
+        y="Jumlah",
+        title="Denda Berdasarkan Dinas",
+        text="Jumlah",
+        color_discrete_sequence=["#00ade6"]
+    )
+    bar_denda.update_layout(
+        paper_bgcolor="#1e293b",
+        plot_bgcolor="#1e293b",
+        font=dict(color="white"),
+        margin=dict(l=40, r=20, t=60, b=80),
+        legend=dict(orientation="h", yanchor="top", y=-0.2, xanchor="center", x=0.5)
+    )
+    
+    # Convert ke JSON untuk ditampilkan di template
+    pie_denda_json = json.dumps(pie_denda, cls=plotly.utils.PlotlyJSONEncoder)
+    bar_denda_json = json.dumps(bar_denda, cls=plotly.utils.PlotlyJSONEncoder)
+
     for fig in [pie1]:
-        for fig in [pie1, pie_band, bar1, bar1_pita, pie_pantib, bar_pantib, pie_inspeksi, bar_inspeksi]:
+        for fig in [pie1, pie_band, bar1, bar1_pita, pie_pantib, bar_pantib, pie_inspeksi, bar_inspeksi, pie_denda, bar_denda]:
             fig.update_layout(
                 paper_bgcolor="#1e293b",  # background luar chart
                 plot_bgcolor="#1e293b",   # background area plot
                 font=dict(color="white")  # teks jadi putih
             )
         
-    for fig in [pie_band, bar1, bar1_pita, pie_pantib, bar_pantib, pie_inspeksi, bar_inspeksi]:
+    for fig in [pie_band, bar1, bar1_pita, pie_pantib, bar_pantib, pie_inspeksi, bar_inspeksi, pie_denda, bar_denda]:
         fig.update_layout(
             paper_bgcolor="#1e293b",
             plot_bgcolor="#1e293b",
@@ -1282,6 +1399,16 @@ def index():
                 padding: 15px;
                 min-height: 400px;   /* tinggi minimal */
                 width: 100%;         /* agar ikuti parent */
+                position: relative;
+                z-index: 1;
+            }
+            
+            .modal {
+              z-index: 9999 !important;   /* pastikan paling tinggi */
+            }
+            
+            .modal-backdrop {
+              z-index: 9998 !important;   /* backdrop di bawah modal tapi tetap di atas chart */
             }
         </style>
         
@@ -1329,7 +1456,7 @@ def index():
 
 
 
-    <body style="background-color:#0d1b2a; color:white; font-family:Segoe UI, sans-serif;">
+    <body style="background-color:#0d1b2a; color:white; font-family:Segoe UI, sans-serif; zoom:80%;">
 
     <div style="display:flex; align-items:center; gap:15px; padding:20px;">
         <img src="/static/logo-komdigi2.png" style="height:50px;">
@@ -1338,6 +1465,7 @@ def index():
             <h2 style="margin:0;">Dashboard Observasi Frekuensi – Balmon SFR Kelas II Mataram</h2/>
             <p style="margin:0; font-size:16px; color:#9ca3af;">ROL Assistance Summary System (ROLASS)</p>
         </div>
+        
         <!-- Tombol -->
         <div style="display:flex; align-items:flex-end; gap:10px; padding:20px; justify-content:flex-end;">
             <button type="submit" style="background:#006db0; color:white; border:none; padding:8px 14px; border-radius:6px;">🔄 Refresh</button>
@@ -1348,12 +1476,14 @@ def index():
                📄 Unduh Nodin
             </button>
             <a href="{{ url_for('logout') }}" 
-               style="color:white; background:#49494a; padding:8px 14px; border-radius:6px; text-decoration:none;">
+               style="color:white; background:red; border:none; padding:8px 14px; border-radius:6px; text-decoration:none;">
                🚪 Logout
             </a>
         </div>
     </div>
+    
 
+        
     <!-- Info Cards -->
     <div style="display:grid; grid-template-columns: repeat(5, 1fr); gap:15px; padding:20px;">
         
@@ -1445,6 +1575,8 @@ def index():
                 {% endfor %}
             </select>
         </div>
+        
+
     </form>
     
 
@@ -1452,8 +1584,8 @@ def index():
     
     <!-- Modal -->
     <div id="laporanModal"
-         style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5);">
-      <div style="background:white; width:400px; margin:100px auto; padding:20px; border-radius:8px; position:relative;">
+         style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index: 99999;">
+      <div style="background:white; width:400px; margin:100px auto; padding:20px; border-radius:8px; position:relative; z-index: 100000;">
         <h3>Isi Nama Pelaksana</h3>
     
         <!-- Form di dalam modal -->
@@ -1481,7 +1613,7 @@ def index():
               <select name="perangkat" id="perangkat"
                       style="width:100%; padding:6px; border:1px solid #ccc; border-radius:5px;">
                 <option value="Tetap/Transportable TCI">Tetap/Transportable TCI</option>
-                <option value="Tetap/Transportable LS Telcom">Tetap/Transportable LS Telcom</option>
+                <option value="Tetap/Transportable LS Telcom">Tetap/Transportable LS Telecom</option>
                 <option value="Bergerak R&S DDF205 Unit Mobil Isuzu Elf / Hilux Hitam">
                   Bergerak R&S DDF205 Unit Mobil Isuzu Elf / Hilux Hitam
                 </option>
@@ -1590,6 +1722,53 @@ def index():
         <div class="chart-container" id="bar_pantib"></div>
     </div>
         
+    <!-- === Chart Penanganan Denda === -->
+    <h2 style="margin:30px 20px 10px;">📊 Penanganan Denda</h2>
+    
+    <div style="
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 20px;
+        padding: 20px;
+    ">
+        <!-- Card Denda Terbayar -->
+        <div style="
+            background: #1e293b;
+            padding: 20px;
+            border-radius: 12px;
+            text-align: center;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        " 
+        onmouseover="this.style.transform='scale(1.03)'; this.style.boxShadow='0 4px 12px rgba(0,0,0,0.4)';"
+        onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='0 2px 6px rgba(0,0,0,0.3)';">
+            <h1 style="margin:0; color:#00ade6;">Rp.74.013.800</h1>
+            <p style="margin:6px 0 0; color:#e5e7eb; font-size:18px;">Denda Terbayar</p>
+        </div>
+    
+        <!-- Card Denda Belum Terbayar -->
+        <div style="
+            background: #1e293b;
+            padding: 20px;
+            border-radius: 12px;
+            text-align: center;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        "
+        onmouseover="this.style.transform='scale(1.03)'; this.style.boxShadow='0 4px 12px rgba(0,0,0,0.4)';"
+        onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='0 2px 6px rgba(0,0,0,0.3)';">
+            <h1 style="margin:0; color:#edbc1b;">Rp.30.492.000</h1>
+            <p style="margin:6px 0 0; color:#e5e7eb; font-size:18px;">Denda Belum Terbayar</p>
+        </div>
+    </div>
+
+    
+    <div class="chart-row">
+        <div class="chart-container" id="pie_denda"></div>
+        <div class="chart-container" id="bar_denda"></div>
+    </div>
+
+    
     <!-- Info Cards Inspeksi -->
     <div style="display:flex; gap:15px; padding:20px; flex-wrap:wrap;">
         <div style="flex:1; min-width:200px; background:#1e293b; padding:15px; border-radius:8px; display:flex; align-items:center; gap:10px;">
@@ -1607,11 +1786,20 @@ def index():
             </div>
         </div>
     </div>
+    
+    {% if apstard_status %}
+        <!-- Kalau Apstard tidak bisa diakses -->
+        <div style="padding:20px; background:#ef4444; color:white; border-radius:8px; margin-top:15px;">
+            ⚠️ {{ apstard_status }}
+        </div>
+    {% else %}
+        <!-- Chart hanya muncul kalau data ada -->
+        <div class="chart-row">
+            <div class="chart-container" id="pie_inspeksi"></div>
+            <div class="chart-container" id="bar_inspeksi"></div>
+        </div>
+    {% endif %}
 
-    <div class="chart-row">
-        <div class="chart-container" id="pie_inspeksi"></div>
-        <div class="chart-container" id="bar_inspeksi"></div>
-    </div>
 
     <script>
         Plotly.newPlot("pie1", {{ pie1_json|safe }}.data, {{ pie1_json|safe }}.layout, {responsive: true});
@@ -1632,6 +1820,13 @@ def index():
         var barInspeksi = {{ bar_inspeksi_json|safe }};
         Plotly.newPlot('pie_inspeksi', pieInspeksi.data, pieInspeksi.layout, {responsive:true});
         Plotly.newPlot('bar_inspeksi', barInspeksi.data, barInspeksi.layout, {responsive:true});
+    </script>
+    
+    <script>
+        var pieInspeksi = {{ pie_denda_json|safe }};
+        var barInspeksi = {{ bar_denda_json|safe }};
+        Plotly.newPlot('pie_denda', {{ pie_denda_json | safe }});
+        Plotly.newPlot('bar_denda', {{ bar_denda_json | safe }});
     </script>
     
     </body>
@@ -1665,7 +1860,9 @@ def index():
     total_inspeksi = total_inspeksi,
     capaian_inspeksi = capaian_inspeksi,
     pie_inspeksi_json=pie_inspeksi_json,
-    bar_inspeksi_json=bar_inspeksi_json
+    bar_inspeksi_json=bar_inspeksi_json,
+    pie_denda_json=pie_denda_json,
+    bar_denda_json=bar_denda_json
     )
     
 @app.route("/get_kab/<spt>")
@@ -1699,31 +1896,4 @@ def get_cat(spt, kab, kec):
     return {"cat_list": cat_options}
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8088)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    app.run(debug=True, host="0.0.0.0", port=80)
