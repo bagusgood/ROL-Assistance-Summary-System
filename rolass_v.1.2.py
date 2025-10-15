@@ -1237,7 +1237,7 @@ def index():
 
     # === PENANGANAN DENDA ===
     denda_terbayar = 74013800
-    denda_belum = 130492000
+    denda_belum = 3333333
     
     # Card total
     total_denda = denda_terbayar + denda_belum
@@ -1897,3 +1897,4 @@ def get_cat(spt, kab, kec):
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=80)
+
