@@ -30,6 +30,8 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 import plotly.express as px
 import plotly.graph_objects as go
+import folium
+from folium.plugins import MarkerCluster
 
 app = Flask(__name__)
 app.secret_key = "rahasia_super"  # ganti dengan secret key lebih kuat
@@ -49,6 +51,60 @@ def login_required(f):
             return redirect(url_for("login"))
         return f(*args, **kwargs)
     return decorated_function
+
+# Ambil data dari API / Google Sheet / CSV
+def load_map_data():
+    sheet_id = "14rFJPrA2fCVkz-7mQoLQ8khV5nLlsKVv"
+    gid = "1153111178"
+
+    url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}"
+
+    # Ambil data ke DataFrame
+    df_map = pd.read_csv(url, header=1)
+    return df_map
+
+def generate_map_html_from_df(df_map, out_filename="map_folium.html"):
+    lat_col = 'Latitude'
+    lon_col = 'Longitude'
+
+    if lat_col not in df_map.columns or lon_col not in df_map.columns:
+        return None
+
+    df_map[lat_col] = pd.to_numeric(df_map[lat_col], errors='coerce')
+    df_map[lon_col] = pd.to_numeric(df_map[lon_col], errors='coerce')
+    df_valid = df_map.dropna(subset=[lat_col, lon_col])
+
+    if df_valid.empty:
+        return None
+
+    # Tengah peta
+    center_lat = float(df_valid[lat_col].mean())
+    center_lon = float(df_valid[lon_col].mean())
+
+    m = folium.Map(location=[center_lat, center_lon], zoom_start=8)
+    marker_cluster = MarkerCluster().add_to(m)
+
+    for i, row in df_valid.iterrows():
+        popup_text = ""
+
+        if 'kabupaten_kota' in df_map.columns:
+            popup_text = row.get('kabupaten_kota', '')
+        elif 'Kabupaten / Kota' in df_map.columns:
+            popup_text = row.get('Kabupaten / Kota', '')
+        else:
+            popup_text = f"Index: {i}"
+
+        folium.Marker(
+            location=[row[lat_col], row[lon_col]],
+            popup=popup_text
+        ).add_to(marker_cluster)
+
+    os.makedirs("static", exist_ok=True)
+    file_path = os.path.join("static", out_filename)
+    m.save(file_path)
+
+    return out_filename
+
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
@@ -1310,7 +1366,23 @@ def index():
             )
         )
 
+    # URL Google Sheet (ubah ke format export CSV)
+    sheet_id_qos = "14rFJPrA2fCVkz-7mQoLQ8khV5nLlsKVv"
+    gid_qos = "1153111178"
+    
+    url_qos = f"https://docs.google.com/spreadsheets/d/{sheet_id_qos}/export?format=csv&gid={gid_qos}"
+    
+    # Ambil data ke DataFrame
+    df_qos = pd.read_csv(url_qos)
+    df_qos = pd.read_csv(url_qos, header=1)
+    jumlah_qos = df_qos['Kabupaten / Kota'].nunique()
+    persen_qos = int(jumlah_qos/10*100)
+    
+    df_map = load_map_data()
 
+    # Generate map file
+    map_static_file = generate_map_html_from_df(df_map)
+    
     pie1_json = json.dumps(pie1, cls=plotly.utils.PlotlyJSONEncoder)
     pie_band_json = json.dumps(pie_band, cls=plotly.utils.PlotlyJSONEncoder)
     bar1_json = json.dumps(bar1, cls=plotly.utils.PlotlyJSONEncoder)
@@ -1409,6 +1481,19 @@ def index():
             
             .modal-backdrop {
               z-index: 9998 !important;   /* backdrop di bawah modal tapi tetap di atas chart */
+            }
+            
+            .map-container {
+                width: 100%;
+                height: 650px;
+                margin-top: 20px;
+                border-radius: 12px;
+                overflow: hidden;
+                box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+                background-color: white;
+            }
+            h2 {
+                margin-top: 20px;
             }
         </style>
         
@@ -1575,12 +1660,7 @@ def index():
                 {% endfor %}
             </select>
         </div>
-        
-
     </form>
-    
-
-
     
     <!-- Modal -->
     <div id="laporanModal"
@@ -1723,7 +1803,7 @@ def index():
     </div>
         
     <!-- === Chart Penanganan Denda === -->
-    <h2 style="margin:30px 20px 10px;">📊 Penanganan Denda</h2>
+    <h2 style="margin:30px 20px 10px;">PENANGANAN DENDA</h2>
     
     <div style="
         display: grid;
@@ -1742,7 +1822,7 @@ def index():
         " 
         onmouseover="this.style.transform='scale(1.03)'; this.style.boxShadow='0 4px 12px rgba(0,0,0,0.4)';"
         onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='0 2px 6px rgba(0,0,0,0.3)';">
-            <h1 style="margin:0; color:#00ade6;">Rp.104.505.800</h1>
+            <h1 style="margin:0; color:#00ade6;">Rp.120.449.700</h1>
             <p style="margin:6px 0 0; color:#e5e7eb; font-size:18px;">Denda Terbayar</p>
         </div>
     
@@ -1757,7 +1837,7 @@ def index():
         "
         onmouseover="this.style.transform='scale(1.03)'; this.style.boxShadow='0 4px 12px rgba(0,0,0,0.4)';"
         onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='0 2px 6px rgba(0,0,0,0.3)';">
-            <h1 style="margin:0; color:#edbc1b;">Rp.0</h1>
+            <h1 style="margin:0; color:#edbc1b;">Rp.277.200</h1>
             <p style="margin:6px 0 0; color:#e5e7eb; font-size:18px;">Denda Belum Terbayar</p>
         </div>
     </div>
@@ -1800,7 +1880,35 @@ def index():
         </div>
     {% endif %}
 
-
+    <!-- Info Cards QoS -->
+    <h2 style="margin:30px 20px 10px;">KUALITAS LAYANAN JARINGAN SELULER</h2>
+    <div style="display:flex; gap:15px; padding:20px; flex-wrap:wrap;">
+        <div style="flex:1; min-width:200px; background:#1e293b; padding:15px; border-radius:8px; display:flex; align-items:center; gap:10px;">
+            <div style="font-size:2rem;">📊</div>
+            <div>
+                <h1 style="margin:0;">{{ jumlah_qos }}</h1>
+                <p>Jumlah Kab/Kota Termonitor</p>
+            </div>
+        </div>
+        <div style="flex:1; min-width:200px; background:#1e293b; padding:15px; border-radius:8px; display:flex; align-items:center; gap:10px;">
+            <div style="font-size:2rem;">🔍</div>
+            <div>
+                <h1 style="margin:0;">{{ persen_qos }}%</h1>
+                <p>Persentase Kab/Kota Termonitor</p>
+            </div>
+        </div>
+    </div>
+    
+    <h2> Peta Sebaran Koordinat QoS</h2>
+    <div class="map-container">
+        <iframe
+            src="{{ url_for('static', filename=map_static_file) }}"
+            width="100%"
+            height="100%"
+            style="border:none;">
+        </iframe>
+    </div>
+    
     <script>
         Plotly.newPlot("pie1", {{ pie1_json|safe }}.data, {{ pie1_json|safe }}.layout, {responsive: true});
         Plotly.newPlot("bar1_pita", {{ bar1_pita_json|safe }}.data, {{ bar1_pita_json|safe }}.layout, {responsive: true});
@@ -1862,7 +1970,10 @@ def index():
     pie_inspeksi_json=pie_inspeksi_json,
     bar_inspeksi_json=bar_inspeksi_json,
     pie_denda_json=pie_denda_json,
-    bar_denda_json=bar_denda_json
+    bar_denda_json=bar_denda_json,
+    jumlah_qos=jumlah_qos,
+    persen_qos=persen_qos,
+    map_static_file=map_static_file
     )
     
 @app.route("/get_kab/<spt>")
@@ -1897,5 +2008,3 @@ def get_cat(spt, kab, kec):
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=80)
-
-
