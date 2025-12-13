@@ -1,4 +1,3 @@
-from flask import Flask, render_template_string, request
 import requests
 import pandas as pd
 import plotly.express as px
@@ -13,7 +12,6 @@ from openpyxl.worksheet.page import PageMargins
 from openpyxl.worksheet.pagebreak import Break
 from openpyxl.styles import Alignment, Border, Side
 from openpyxl.styles import PatternFill
-import os, tempfile
 from datetime import datetime
 from reportlab.lib.pagesizes import A4
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, Table, TableStyle, PageBreak
@@ -25,10 +23,9 @@ from reportlab.lib import colors
 from reportlab.pdfbase.ttfonts import TTFont
 import locale
 from flask import Flask, render_template_string, request, redirect, url_for, session, flash
-import logging, os
+import logging, os, tempfile
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
-import plotly.express as px
 import plotly.graph_objects as go
 import folium
 from folium.plugins import MarkerCluster
@@ -69,11 +66,17 @@ def generate_map_html_from_df(df_map, out_filename="map_folium.html"):
 
     if lat_col not in df_map.columns or lon_col not in df_map.columns:
         return None
+    
+    # Konversi ke float
+    for col in [lat_col, lon_col]:
+        df_map[col] = (
+            df_map[col].astype(str).str.replace(",", ".", regex=False)
+                       .astype(float)
+        )
 
-    df_map[lat_col] = pd.to_numeric(df_map[lat_col], errors='coerce')
-    df_map[lon_col] = pd.to_numeric(df_map[lon_col], errors='coerce')
+    # Hapus baris invalid
     df_valid = df_map.dropna(subset=[lat_col, lon_col])
-
+    
     if df_valid.empty:
         return None
 
@@ -83,27 +86,38 @@ def generate_map_html_from_df(df_map, out_filename="map_folium.html"):
 
     m = folium.Map(location=[center_lat, center_lon], zoom_start=8)
     marker_cluster = MarkerCluster().add_to(m)
-
+    
     for i, row in df_valid.iterrows():
-        popup_text = ""
 
-        if 'kabupaten_kota' in df_map.columns:
-            popup_text = row.get('kabupaten_kota', '')
-        elif 'Kabupaten / Kota' in df_map.columns:
-            popup_text = row.get('Kabupaten / Kota', '')
-        else:
-            popup_text = f"Index: {i}"
+        # Ambil nilai Speedtest
+        dl = row.get("Average Speedtest Download Speed (Mbps)", "N/A")
+        ul = row.get("Average Speedtest Upload Speed (Mbps)", "N/A")
+
+        # Ambil nama kab/kota
+        kabkot = row.get("Kabupaten / Kota", "Tidak diketahui")
+
+        # Popup HTML rapi
+        popup_text = f"""
+        <b>{kabkot}</b><br>
+        <hr style='margin:4px 0;'>
+        <b>📥 Download:</b> {dl} Mbps<br>
+        <b>📤 Upload:</b> {ul} Mbps<br>
+        """
 
         folium.Marker(
             location=[row[lat_col], row[lon_col]],
-            popup=popup_text
+            popup=folium.Popup(popup_text, max_width=350)
         ).add_to(marker_cluster)
 
+    # Simpan map
     os.makedirs("static", exist_ok=True)
     file_path = os.path.join("static", out_filename)
     m.save(file_path)
 
     return out_filename
+
+
+
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -1377,11 +1391,48 @@ def index():
     df_qos = pd.read_csv(url_qos, header=1)
     jumlah_qos = df_qos['Kabupaten / Kota'].nunique()
     persen_qos = int(jumlah_qos/10*100)
-    
-    df_map = load_map_data()
 
-    # Generate map file
+    df_map = load_map_data()
     map_static_file = generate_map_html_from_df(df_map)
+
+    # =========================
+    # DATA UNTUK CARD SPEEDTEST
+    # =========================
+    
+    speed_cols = [
+        "Average Speedtest Download Speed (Mbps)",
+        "Average Speedtest Upload Speed (Mbps)"
+    ]
+    
+    # Paksa konversi ke numeric (non-angka → NaN)
+    for col in speed_cols:
+        df_map[col] = (
+            df_map[col]
+            .astype(str)
+            .str.replace(",", ".", regex=False)
+            .str.strip()
+        )
+        df_map[col] = pd.to_numeric(df_map[col], errors="coerce")
+    
+    # Hapus baris yang tidak punya nilai speed valid
+    operator_speed_df = df_map.dropna(
+        subset=[
+            "Operator",
+            "Average Speedtest Download Speed (Mbps)",
+            "Average Speedtest Upload Speed (Mbps)"
+        ]
+    )
+    
+    # Ambil kolom yang dibutuhkan saja
+    operator_speed_df = operator_speed_df[[
+        "Operator",
+        "Average Speedtest Download Speed (Mbps)",
+        "Average Speedtest Upload Speed (Mbps)"
+    ]]
+    
+    # Convert ke JSON
+    operator_speed_json = operator_speed_df.to_dict(orient="records")
+
     
     pie1_json = json.dumps(pie1, cls=plotly.utils.PlotlyJSONEncoder)
     pie_band_json = json.dumps(pie_band, cls=plotly.utils.PlotlyJSONEncoder)
@@ -1547,8 +1598,8 @@ def index():
         <img src="/static/logo-komdigi2.png" style="height:50px;">
         <img src="/static/djid.png" style="height:50px;">
         <div>
-            <h2 style="margin:0;">Dashboard Observasi Frekuensi – Balmon SFR Kelas II Mataram</h2/>
-            <p style="margin:0; font-size:16px; color:#9ca3af;">ROL Assistance Summary System (ROLASS)</p>
+            <h2 style="margin:0;">Dashboard Capaian Kinerja – Balmon SFR Kelas II Mataram</h2/>
+            <p style="margin:0; font-size:16px; color:#9ca3af;">One-Data Aggregation & Analytics (WANDAA)</p>
         </div>
         
         <!-- Tombol -->
@@ -1780,6 +1831,7 @@ def index():
     </div>
 
     <!-- Info Cards Pantib -->
+    <h2 style="margin:30px 20px 10px;">TEMUAN PENERTIBAN</h2>
     <div style="display:flex; gap:15px; padding:20px; flex-wrap:wrap;">
         <div style="flex:1; min-width:200px; background:#1e293b; padding:15px; border-radius:8px; display:flex; align-items:center; gap:10px;">
             <div style="font-size:2rem;">⚠️</div>
@@ -1822,7 +1874,7 @@ def index():
         " 
         onmouseover="this.style.transform='scale(1.03)'; this.style.boxShadow='0 4px 12px rgba(0,0,0,0.4)';"
         onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='0 2px 6px rgba(0,0,0,0.3)';">
-            <h1 style="margin:0; color:#00ade6;">Rp.120.449.700</h1>
+            <h1 style="margin:0; color:#00ade6;">Rp.120.726.900</h1>
             <p style="margin:6px 0 0; color:#e5e7eb; font-size:18px;">Denda Terbayar</p>
         </div>
     
@@ -1837,7 +1889,7 @@ def index():
         "
         onmouseover="this.style.transform='scale(1.03)'; this.style.boxShadow='0 4px 12px rgba(0,0,0,0.4)';"
         onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='0 2px 6px rgba(0,0,0,0.3)';">
-            <h1 style="margin:0; color:#edbc1b;">Rp.277.200</h1>
+            <h1 style="margin:0; color:#edbc1b;">Rp.0</h1>
             <p style="margin:6px 0 0; color:#e5e7eb; font-size:18px;">Denda Belum Terbayar</p>
         </div>
     </div>
@@ -1850,6 +1902,7 @@ def index():
 
     
     <!-- Info Cards Inspeksi -->
+    <h2 style="margin:30px 20px 10px;">PEMERIKSAAN MICROWAVE LINK</h2>
     <div style="display:flex; gap:15px; padding:20px; flex-wrap:wrap;">
         <div style="flex:1; min-width:200px; background:#1e293b; padding:15px; border-radius:8px; display:flex; align-items:center; gap:10px;">
             <div style="font-size:2rem;">📊</div>
@@ -1880,35 +1933,84 @@ def index():
         </div>
     {% endif %}
 
-    <!-- Info Cards QoS -->
-    <h2 style="margin:30px 20px 10px;">KUALITAS LAYANAN JARINGAN SELULER</h2>
-    <div style="display:flex; gap:15px; padding:20px; flex-wrap:wrap;">
-        <div style="flex:1; min-width:200px; background:#1e293b; padding:15px; border-radius:8px; display:flex; align-items:center; gap:10px;">
-            <div style="font-size:2rem;">📊</div>
+    <!-- ================= DASHBOARD QOS & SPEED ================= -->
+    <h2 style="margin:30px 20px 10px;">
+        📡 KUALITAS & PERFORMA JARINGAN SELULER
+    </h2>
+    
+    <div style="
+        display:grid;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        gap:20px;
+        padding:20px;
+    ">
+    
+        <!-- CARD JUMLAH KAB/KOTA -->
+        <div style="background:#1e293b; padding:18px; border-radius:12px; display:flex; gap:14px; align-items:center;">
+            <div style="font-size:2.5rem;">📊</div>
             <div>
                 <h1 style="margin:0;">{{ jumlah_qos }}</h1>
-                <p>Jumlah Kab/Kota Termonitor</p>
+                <p style="margin:0; opacity:0.8;">Kab/Kota Termonitor</p>
             </div>
         </div>
-        <div style="flex:1; min-width:200px; background:#1e293b; padding:15px; border-radius:8px; display:flex; align-items:center; gap:10px;">
-            <div style="font-size:2rem;">🔍</div>
+    
+        <!-- CARD PERSENTASE -->
+        <div style="background:#1e293b; padding:18px; border-radius:12px; display:flex; gap:14px; align-items:center;">
+            <div style="font-size:2.5rem;">📈</div>
             <div>
                 <h1 style="margin:0;">{{ persen_qos }}%</h1>
-                <p>Persentase Kab/Kota Termonitor</p>
+                <p style="margin:0; opacity:0.8;">Cakupan Monitoring</p>
             </div>
         </div>
-    </div>
     
-    <h2> Peta Sebaran Koordinat QoS</h2>
-    <div class="map-container">
+        <!-- CARD DOWNLOAD -->
+        <div style="background:#1e293b; padding:18px; border-radius:12px;">
+            <h4 style="margin-bottom:8px;">📥 Download Speed</h4>
+            <h1 id="avgDownloadText">- Mbps</h1>
+    
+            <div style="background:#334155; border-radius:6px; height:14px; width:100%; overflow:hidden;">
+                <div id="avgDownloadBar"
+                     style="height:100%; width:0%; background:linear-gradient(90deg,#ef4444,#eab308,#22c55e);">
+                </div>
+            </div>
+            <small style="opacity:0.7;">Skala hingga 100 Mbps</small>
+        </div>
+    
+        <!-- CARD UPLOAD -->
+        <div style="background:#1e293b; padding:18px; border-radius:12px;">
+            <h4 style="margin-bottom:8px;">📤 Upload Speed</h4>
+            <h1 id="avgUploadText">- Mbps</h1>
+    
+            <div style="background:#334155; border-radius:6px; height:14px; width:100%; overflow:hidden;">
+                <div id="avgUploadBar"
+                     style="height:100%; width:0%; background:linear-gradient(90deg,#ef4444,#eab308,#22c55e);">
+                </div>
+            </div>
+            <small style="opacity:0.7;">Skala hingga 50 Mbps</small>
+        </div>
+    
+        <!-- FILTER OPERATOR -->
+        <div style="background:#1e293b; padding:18px; border-radius:12px;">
+            <h4 style="margin-bottom:10px;">📡 Operator Seluler</h4>
+            <label><input type="checkbox" class="op-filter" value="Telkomsel" checked> Telkomsel</label><br>
+            <label><input type="checkbox" class="op-filter" value="Indosat" checked> Indosat</label><br>
+            <label><input type="checkbox" class="op-filter" value="XL" checked> XL</label><br>
+            <label><input type="checkbox" class="op-filter" value="Smart" checked> Smart</label>
+        </div>
+    
+    </div>
+
+    <h2 style="margin:30px 20px 10px;">🗺️ Peta Sebaran Koordinat QoS</h2>
+    
+    <div class="map-container" style="height:600px; margin:20px;">
         <iframe
-            src="{{ url_for('static', filename=map_static_file) }}"
+            src="/static/{{ map_static_file }}"
             width="100%"
             height="100%"
-            style="border:none;">
+            style="border:none; border-radius:12px;">
         </iframe>
     </div>
-    
+
     <script>
         Plotly.newPlot("pie1", {{ pie1_json|safe }}.data, {{ pie1_json|safe }}.layout, {responsive: true});
         Plotly.newPlot("bar1_pita", {{ bar1_pita_json|safe }}.data, {{ bar1_pita_json|safe }}.layout, {responsive: true});
@@ -1937,6 +2039,59 @@ def index():
         Plotly.newPlot('bar_denda', {{ bar_denda_json | safe }});
     </script>
     
+    <script>
+    const speedData = {{ operator_speed_json | safe }};
+    
+    // batas skala (bisa diubah)
+    const MAX_DOWNLOAD = 100; // Mbps
+    const MAX_UPLOAD = 50;   // Mbps
+    
+    function updateSpeedCards() {
+        const selectedOperators = Array.from(
+            document.querySelectorAll('.op-filter:checked')
+        ).map(cb => cb.value);
+    
+        const filtered = speedData.filter(d =>
+            selectedOperators.includes(d.Operator)
+        );
+    
+        if (filtered.length === 0) {
+            document.getElementById("avgDownloadText").innerText = "- Mbps";
+            document.getElementById("avgUploadText").innerText = "- Mbps";
+            document.getElementById("avgDownloadBar").style.width = "0%";
+            document.getElementById("avgUploadBar").style.width = "0%";
+            return;
+        }
+    
+        const avgDL = filtered.reduce(
+            (s, d) => s + d["Average Speedtest Download Speed (Mbps)"], 0
+        ) / filtered.length;
+    
+        const avgUL = filtered.reduce(
+            (s, d) => s + d["Average Speedtest Upload Speed (Mbps)"], 0
+        ) / filtered.length;
+    
+        // Text
+        document.getElementById("avgDownloadText").innerText = avgDL.toFixed(2) + " Mbps";
+        document.getElementById("avgUploadText").innerText = avgUL.toFixed(2) + " Mbps";
+    
+        // Bar scale (%)
+        const dlPercent = Math.min((avgDL / MAX_DOWNLOAD) * 100, 100);
+        const ulPercent = Math.min((avgUL / MAX_UPLOAD) * 100, 100);
+    
+        document.getElementById("avgDownloadBar").style.width = dlPercent + "%";
+        document.getElementById("avgUploadBar").style.width = ulPercent + "%";
+    }
+    
+    // event listener
+    document.querySelectorAll('.op-filter').forEach(cb =>
+        cb.addEventListener('change', updateSpeedCards)
+    );
+    
+    // init
+    updateSpeedCards();
+    </script>
+
     </body>
     </html>
     ''',
@@ -1973,7 +2128,8 @@ def index():
     bar_denda_json=bar_denda_json,
     jumlah_qos=jumlah_qos,
     persen_qos=persen_qos,
-    map_static_file=map_static_file
+    map_static_file=map_static_file,
+    operator_speed_json=json.dumps(operator_speed_json)
     )
     
 @app.route("/get_kab/<spt>")
@@ -2007,5 +2163,4 @@ def get_cat(spt, kab, kec):
     return {"cat_list": cat_options}
 
 if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0", port=8088)
-
+    app.run(debug=True, host="0.0.0.0", port=80)
