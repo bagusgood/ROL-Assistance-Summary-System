@@ -117,9 +117,6 @@ def generate_map_html_from_df(df_map, out_filename="map_folium.html"):
     return out_filename
 
 
-
-
-
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
@@ -231,11 +228,11 @@ logging.basicConfig(
 def safe_filename(text):
     return re.sub(r'[\\/*?:"<>|]', "_", str(text).strip())
 
-def load_data():
+def load_data(year):
     url = "https://rol.postel.go.id/api/observasi/allapproved"
     params = {
         "upt": 19,
-        "year": "2025",
+        "year": year,
         "pageIndex": 1,
         "pageSize": 100000
     }
@@ -310,7 +307,7 @@ def load_pantib(use_cache=True):
         "X-Requested-With": "XMLHttpRequest",
         "Referer": "https://rol.postel.go.id/penertiban",
         # ⚠️ Cookie selalu berubah → kalau tidak valid, fallback ke pantib.json
-        "Cookie": "csrf_cookie_name=ISI_COOKIE; ci_session=ISI_SESSION"
+        "Cookie": "csrf_cookie_name=2e099f4d4f3f335b4f9b445017d17869; ci_session=i2rgrkn5ha876ru0fnm6i9pqmqtg1bho"
     }
 
     session = requests.Session()
@@ -390,8 +387,9 @@ def format_tanggal_indonesia(tgl_raw):
 
 
 @app.route("/unduh_laporan", methods=["GET", "POST"])
-def unduh_laporan():       
-    df = load_data()
+def unduh_laporan():     
+    selected_year = request.form.get("year", "2025")
+    df = load_data(selected_year)
 
     # Transformasi jenis identifikasi
     df["observasi_status_identifikasi_name"] = df["observasi_status_identifikasi_name"].str.replace(
@@ -642,7 +640,8 @@ def unduh_laporan():
 
 @app.route("/download_excel", methods=["POST"])
 def download_excel():
-    df = load_data()
+    selected_year = request.form.get("year", "2025")
+    df = load_data(selected_year)
 
     # Transformasi jenis identifikasi
     df["observasi_status_identifikasi_name"] = df["observasi_status_identifikasi_name"].str.replace(
@@ -1033,10 +1032,11 @@ def index():
     
     # Card 2: persentase telah ditertibkan
     total_data = len(df_pantib)
-    sudah_ditertibkan = df_pantib["penertiban_no_penindakan"].notna().sum()
+    sudah_ditertibkan = df_pantib["penertiban_no_teguran"].notna().sum()
     persentase_ditertibkan = round((sudah_ditertibkan / total_data) * 100, 2) if total_data > 0 else 0
 
-    df = load_data()
+    selected_year = request.form.get("year", "2025")
+    df = load_data(selected_year)
     # Tambahkan kolom jenis
     if 'observasi_status_identifikasi_name' in df.columns:
         df['jenis'] = df['observasi_status_identifikasi_name'].apply(
@@ -1602,20 +1602,30 @@ def index():
             <p style="margin:0; font-size:16px; color:#9ca3af;">One-Data Aggregation & Analytics (WANDAA)</p>
         </div>
         
-        <!-- Tombol -->
-        <div style="display:flex; align-items:flex-end; gap:10px; padding:20px; justify-content:flex-end;">
-            <button type="submit" style="background:#006db0; color:white; border:none; padding:8px 14px; border-radius:6px;">🔄 Refresh</button>
-            <button form="excel-form" type="submit" style="background:#006db0; color:white; border:none; padding:8px 14px; border-radius:6px;">⬇️ Unduh Rekap</button>
-            <button type="button" onclick="openModal()"
-                    class="btn"
-                    style="background:#006db0; color:white; border:none; padding:8px 14px; border-radius:6px; text-decoration:none;">
-               📄 Unduh Nodin
+        <!-- Tombol + Pilih Tahun -->
+        <div style="display:flex; align-items:flex-end; gap:10px; padding:20px; justify-content:flex-end;">      
+            <!-- Tombol -->
+            <button type="submit"
+                    style="background:#006db0; color:white; border:none; padding:8px 14px; border-radius:6px;">
+                🔄 Refresh
             </button>
-            <a href="{{ url_for('logout') }}" 
-               style="color:white; background:red; border:none; padding:8px 14px; border-radius:6px; text-decoration:none;">
-               🚪 Logout
+        
+            <button form="excel-form" type="submit"
+                    style="background:#006db0; color:white; border:none; padding:8px 14px; border-radius:6px;">
+                ⬇️ Unduh Rekap
+            </button>
+        
+            <button type="button" onclick="openModal()"
+                    style="background:#006db0; color:white; border:none; padding:8px 14px; border-radius:6px;">
+                📄 Unduh Nodin
+            </button>
+        
+            <a href="{{ url_for('logout') }}"
+               style="color:white; background:red; border:none; padding:6px 12px; border-radius:6px;">
+                Logout
             </a>
         </div>
+
     </div>
     
 
@@ -1672,6 +1682,19 @@ def index():
     
     <!-- Filter -->
     <form method="POST" class="filter-form" id="main-form">
+        <!-- Pilih Tahun -->
+        <div style="display:flex; flex-direction:column;">
+            <select name="year" id="year" onchange="autoSubmit('year')";
+                    style="padding:8px 14px; border-radius:6px; border:none; background:#edbc1b; color:white;">
+                <option value="2021" {% if selected_year == "2021" %}selected{% endif %}>2021</option>
+                <option value="2022" {% if selected_year == "2022" %}selected{% endif %}>2022</option>
+                <option value="2023" {% if selected_year == "2023" %}selected{% endif %}>2023</option>
+                <option value="2024" {% if selected_year == "2024" %}selected{% endif %}>2024</option>
+                <option value="2025" {% if selected_year == "2025" %}selected{% endif %}>2025</option>
+                <option value="2026" {% if selected_year == "2026" %}selected{% endif %}>2026</option>
+            </select>
+        </div>
+        
         <!-- Dropdown filter -->
         <div class="filter-group">
             <label for="spt">No SPT</label>
@@ -2099,6 +2122,7 @@ def index():
     kab_options=kab_options,
     kec_options=kec_options,
     cat_options=cat_options,
+    selected_year=selected_year,
     selected_spt=selected_spt,
     selected_kab=selected_kab,
     selected_kec=selected_kec,
@@ -2134,7 +2158,8 @@ def index():
     
 @app.route("/get_kab/<spt>")
 def get_kab(spt):
-    df = load_data()
+    selected_year = request.form.get("year", "2025")
+    df = load_data(selected_year)
     if spt != "Semua":
         df = df[df["observasi_no_spt"] == spt]
     kab_options = sorted(df["observasi_kota_nama"].dropna().unique().tolist())
@@ -2142,7 +2167,8 @@ def get_kab(spt):
 
 @app.route("/get_kec/<spt>/<kab>")
 def get_kec(spt, kab):
-    df = load_data()
+    selected_year = request.form.get("year", "2025")
+    df = load_data(selected_year)
     if spt != "Semua":
         df = df[df["observasi_no_spt"] == spt]
     if kab != "Semua":
@@ -2152,7 +2178,8 @@ def get_kec(spt, kab):
 
 @app.route("/get_cat/<spt>/<kab>/<kec>")
 def get_cat(spt, kab, kec):
-    df = load_data()
+    selected_year = request.form.get("year", "2025")
+    df = load_data(selected_year)
     if spt != "Semua":
         df = df[df["observasi_no_spt"] == spt]
     if kab != "Semua":
