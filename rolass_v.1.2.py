@@ -298,7 +298,7 @@ def load_info_inspeksi(use_cache=True):
 
 
 
-def load_pantib(use_cache=True):
+def load_pantib(year, use_cache=True):
     url = "https://rol.postel.go.id/api/penertiban/list"
 
     headers = {
@@ -323,7 +323,7 @@ def load_pantib(use_cache=True):
             params = {
                 "status": "",
                 "status_penertiban": "",
-                "tahun": "2025",
+                "tahun": year,
                 "pageIndex": page,
                 "pageSize": page_size
             }
@@ -1026,7 +1026,8 @@ def index():
     
     
     ############PENERTIBANNNNNNNNNN
-    df_pantib = load_pantib()
+    selected_year = request.form.get("year", "2025")
+    df_pantib = load_pantib(selected_year, use_cache=True)
     # Card 1: jumlah pelanggaran
     jumlah_pelanggaran = len(df_pantib)
     
@@ -1686,8 +1687,6 @@ def index():
         <div style="display:flex; flex-direction:column;">
             <select name="year" id="year" onchange="autoSubmit('year')";
                     style="padding:8px 14px; border-radius:6px; border:none; background:#edbc1b; color:white;">
-                <option value="2021" {% if selected_year == "2021" %}selected{% endif %}>2021</option>
-                <option value="2022" {% if selected_year == "2022" %}selected{% endif %}>2022</option>
                 <option value="2023" {% if selected_year == "2023" %}selected{% endif %}>2023</option>
                 <option value="2024" {% if selected_year == "2024" %}selected{% endif %}>2024</option>
                 <option value="2025" {% if selected_year == "2025" %}selected{% endif %}>2025</option>
@@ -2116,6 +2115,56 @@ def index():
     </script>
 
     </body>
+    
+    <!-- Loading Overlay -->
+    <div id="loading-overlay"
+         style="
+            display:none;
+            position:fixed;
+            top:0; left:0;
+            width:100%; height:100%;
+            background:rgba(0,0,0,0.6);
+            z-index:9999;
+            align-items:center;
+            justify-content:center;
+            color:white;
+            font-size:18px;
+         ">
+    
+        <div style="background:#1e1e1e; padding:30px 40px; border-radius:10px; text-align:center;">
+    
+            <!-- SPINNER DI SINI -->
+            <div style="
+                border:4px solid #444;
+                border-top:4px solid #00aaff;
+                border-radius:50%;
+                width:40px;
+                height:40px;
+                animation:spin 1s linear infinite;
+                margin:0 auto 15px;
+            "></div>
+    
+            <strong>Sedang proses</strong><br>
+            <span style="font-size:14px;">Mohon tunggu sebentar...</span>
+        </div>
+    </div>
+    
+    <style>
+    @keyframes spin {
+        0%   { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+    </style>
+
+    
+    <script>
+    function autoSubmit() {
+        const overlay = document.getElementById("loading-overlay");
+        overlay.style.display = "flex";
+        document.getElementById("main-form").submit();
+    }
+    </script>
+
     </html>
     ''',
     spt_options=spt_options,
@@ -2191,5 +2240,3 @@ def get_cat(spt, kab, kec):
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=80)
-
-
