@@ -1315,7 +1315,7 @@ def index():
     # Data untuk Pie Chart (status pembayaran)
     pie_denda_status = pd.DataFrame({
         "Status": ["Denda Terbayar", "Belum Terbayar"],
-        "Jumlah": [29, 1]
+        "Jumlah": [44, 44]
     })
     pie_denda = px.pie(
         pie_denda_status,
@@ -2191,3 +2191,4 @@ def get_cat(spt, kab, kec):
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=80)
+
