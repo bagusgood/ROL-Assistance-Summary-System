@@ -640,7 +640,8 @@ def unduh_laporan():
 
 @app.route("/download_excel", methods=["POST"])
 def download_excel():
-    selected_year = request.form.get("year", "2025")
+    #selected_year = request.form.get("year", "2025")
+    selected_year = 2026
     df = load_data(selected_year)
 
     # Transformasi jenis identifikasi
@@ -1026,7 +1027,8 @@ def index():
     
     
     ############PENERTIBANNNNNNNNNN
-    pantib_selected_year = request.form.get("year", "2025")
+    #pantib_selected_year = request.form.get("year", "2025")
+    pantib_selected_year = 2025
     df_pantib = load_pantib(pantib_selected_year, use_cache=True)
     # Card 1: jumlah pelanggaran
     jumlah_pelanggaran = len(df_pantib)
@@ -1859,7 +1861,7 @@ def index():
             <option value="2023" {% if pantib_selected_year == "2023" %}selected{% endif %}>2023</option>
             <option value="2024" {% if pantib_selected_year == "2024" %}selected{% endif %}>2024</option>
             <option value="2025" {% if pantib_selected_year == "2025" %}selected{% endif %}>2025</option>
-            <option value="2025" {% if pantib_selected_year == "2025" %}selected{% endif %}>2025</option>
+            <option value="2026" {% if pantib_selected_year == "2026" %}selected{% endif %}>2026</option>
         </select>
     </div>
     </form>
