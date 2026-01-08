@@ -1026,8 +1026,8 @@ def index():
     
     
     ############PENERTIBANNNNNNNNNN
-    selected_year = request.form.get("year", "2025")
-    df_pantib = load_pantib(selected_year, use_cache=True)
+    pantib_selected_year = request.form.get("year", "2025")
+    df_pantib = load_pantib(pantib_selected_year, use_cache=True)
     # Card 1: jumlah pelanggaran
     jumlah_pelanggaran = len(df_pantib)
     
@@ -1450,7 +1450,7 @@ def index():
     <html>
     <head>
         <meta charset="UTF-8">
-        <title>DATA OBSERVASI BALAI MONITOR SFR KELAS II MATARAM TAHUN 2025</title>
+        <title>DATA OBSERVASI BALAI MONITOR SFR KELAS II MATARAM</title>
         <link rel="icon" type="image/png" href="{{ url_for('static', filename='D.png') }}">
         <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
         <style>
@@ -1626,11 +1626,8 @@ def index():
                 Logout
             </a>
         </div>
-
     </div>
-    
 
-        
     <!-- Info Cards -->
     <div style="display:grid; grid-template-columns: repeat(5, 1fr); gap:15px; padding:20px;">
         
@@ -1679,14 +1676,15 @@ def index():
             </div>
         </div>
     </div>
-
     
-    <!-- Filter -->
+    <!-- Filter OBSMON-->
     <form method="POST" class="filter-form" id="main-form">
         <!-- Pilih Tahun -->
         <div style="display:flex; flex-direction:column;">
             <select name="year" id="year" onchange="autoSubmit('year')";
                     style="padding:8px 14px; border-radius:6px; border:none; background:#edbc1b; color:white;">
+                <option value="2021" {% if selected_year == "2021" %}selected{% endif %}>2021</option>
+                <option value="2022" {% if selected_year == "2022" %}selected{% endif %}>2022</option>
                 <option value="2023" {% if selected_year == "2023" %}selected{% endif %}>2023</option>
                 <option value="2024" {% if selected_year == "2024" %}selected{% endif %}>2024</option>
                 <option value="2025" {% if selected_year == "2025" %}selected{% endif %}>2025</option>
@@ -1853,7 +1851,19 @@ def index():
     </div>
 
     <!-- Info Cards Pantib -->
-    <h2 style="margin:30px 20px 10px;">TEMUAN PENERTIBAN</h2>
+    <form method="POST" class="filter-form" id="main-form">
+    <div style="display:flex; left-content:space-between; align-items:center; margin:10px 10px 10px;">
+        <h2 style="margin:0;">TEMUAN PENERTIBAN</h2>
+        <select name="pantib_year" id="year" onchange="autoSubmit('pantib_year')"
+                style="padding:8px 14px; border-radius:6px; border:none; background:#edbc1b; color:white;">
+            <option value="2023" {% if pantib_selected_year == "2023" %}selected{% endif %}>2023</option>
+            <option value="2024" {% if pantib_selected_year == "2024" %}selected{% endif %}>2024</option>
+            <option value="2025" {% if pantib_selected_year == "2025" %}selected{% endif %}>2025</option>
+            <option value="2026" {% if pantib_selected_year == "2026" %}selected{% endif %}>2026</option>
+        </select>
+    </div>
+    </form>
+    
     <div style="display:flex; gap:15px; padding:20px; flex-wrap:wrap;">
         <div style="flex:1; min-width:200px; background:#1e293b; padding:15px; border-radius:8px; display:flex; align-items:center; gap:10px;">
             <div style="font-size:2rem;">⚠️</div>
@@ -2172,6 +2182,7 @@ def index():
     kec_options=kec_options,
     cat_options=cat_options,
     selected_year=selected_year,
+    pantib_selected_year=pantib_selected_year,
     selected_spt=selected_spt,
     selected_kab=selected_kab,
     selected_kec=selected_kec,
