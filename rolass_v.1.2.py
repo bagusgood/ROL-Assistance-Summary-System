@@ -191,7 +191,7 @@ def login():
     </head>
     <body>
         <div class="login-box">
-            <h2>ROL ASSISTANCE SUMMARY SYSTEM (ROLASS)</h2>
+            <h2>ONE-DATA AGGREGATION AND ANALYTICS (WANDAA)</h2>
             <form method="POST">
                 <input type="text" name="username" placeholder="Username" required>
                 <input type="password" name="password" placeholder="Password" required>
@@ -2252,10 +2252,4 @@ def get_cat(spt, kab, kec):
     return {"cat_list": cat_options}
 
 if __name__ == "__main__":
-    #app.run(debug=True, host="0.0.0.0", port=80)
-    app.run(host="0.0.0.0", port=5000, debug=True)
-
-
-
-
-
+    app.run(host="0.0.0.0", port=5000)
