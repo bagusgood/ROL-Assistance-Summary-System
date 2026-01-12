@@ -140,7 +140,7 @@ def login():
                 margin: 0;
                 padding: 0;
                 font-family: Arial, sans-serif;
-                background: url('{{ url_for("static", filename="bg-login.jpg") }}') no-repeat center center fixed;
+                background: url('{{ url_for("static", filename="bg-login.png") }}') no-repeat center center fixed;
                 background-size: cover;
                 display: flex;
                 justify-content: center;
@@ -2254,6 +2254,7 @@ def get_cat(spt, kab, kec):
 if __name__ == "__main__":
     #app.run(debug=True, host="0.0.0.0", port=80)
     app.run(host="0.0.0.0", port=5000, debug=True)
+
 
 
 
