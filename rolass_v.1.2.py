@@ -1659,6 +1659,17 @@ def index():
                 box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
             }
             
+            .filter-form2 {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 2px;
+                margin: 2px 0;
+                background-color: #1e1e1e; /* gelap */
+                padding: 2px;
+                border-radius: 1px;
+                box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+            }
+            
             .filter-group label {
                 font-weight: 600;
                 margin-bottom: 5px;
@@ -1778,18 +1789,20 @@ def index():
         <!-- Tombol + Pilih Tahun -->
         <div style="display:flex; align-items:flex-end; gap:10px; padding:20px; justify-content:flex-end;">      
             <!-- Tombol -->
-            <!-- Pilih Tahun -->
-            <div style="display:flex; flex-direction:column;">
-                <select name="year" id="year" onchange="autoSubmit('year')";
-                        style="padding:8px 14px; border-radius:6px; border:none; background:#edbc1b; color:white;">
-                    <option value="2021" {% if selected_year == "2021" %}selected{% endif %}>2021</option>
-                    <option value="2022" {% if selected_year == "2022" %}selected{% endif %}>2022</option>
-                    <option value="2023" {% if selected_year == "2023" %}selected{% endif %}>2023</option>
-                    <option value="2024" {% if selected_year == "2024" %}selected{% endif %}>2024</option>
-                    <option value="2025" {% if selected_year == "2025" %}selected{% endif %}>2025</option>
-                    <option value="2026" {% if selected_year == "2026" %}selected{% endif %}>2026</option>
-                </select>
-            </div>
+            <form method="POST" class="filter-form2" id="main-form">
+                <!-- Pilih Tahun -->
+                <div style="display:flex; flex-direction:column;">
+                    <select name="year" id="year" onchange="autoSubmit('year')";
+                            style="padding:8px 14px; border-radius:6px; border:none; background:#edbc1b; color:white;">
+                        <option value="2021" {% if selected_year == "2021" %}selected{% endif %}>2021</option>
+                        <option value="2022" {% if selected_year == "2022" %}selected{% endif %}>2022</option>
+                        <option value="2023" {% if selected_year == "2023" %}selected{% endif %}>2023</option>
+                        <option value="2024" {% if selected_year == "2024" %}selected{% endif %}>2024</option>
+                        <option value="2025" {% if selected_year == "2025" %}selected{% endif %}>2025</option>
+                        <option value="2026" {% if selected_year == "2026" %}selected{% endif %}>2026</option>
+                    </select>
+                </div>
+            </form>
             
             <button type="submit"
                     style="background:#006db0; color:white; border:none; padding:8px 14px; border-radius:6px;">
