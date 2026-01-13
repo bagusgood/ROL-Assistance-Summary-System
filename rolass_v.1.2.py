@@ -29,6 +29,8 @@ from urllib3.util.retry import Retry
 import plotly.graph_objects as go
 import folium
 from folium.plugins import MarkerCluster
+import urllib3
+import urllib.parse
 
 app = Flask(__name__)
 app.secret_key = "rahasia_super"  # ganti dengan secret key lebih kuat
@@ -38,6 +40,15 @@ USERS = {
     "balmon_mataram": "rahasia_umum",   # username: password
     "username": "password"
 }
+
+# ================== CONFIG INVOICE ==================
+INVOICE_BASE_URL = "https://dendaadministratif.postel.go.id"
+INVOICE_LOGIN_URL = f"{INVOICE_BASE_URL}/auth/login"
+INVOICE_DATA_URL = f"{INVOICE_BASE_URL}/application/invoice/get/data/management"
+
+INVOICE_USERNAME = "pic1_upt_mataram"
+INVOICE_PASSWORD = "password"
+
 
 # Middleware untuk proteksi halaman
 def login_required(f):
@@ -134,7 +145,7 @@ def login():
     <!DOCTYPE html>
     <html>
     <head>
-        <title>Login ROLASS</title>
+        <title>Login WANDAA</title>
         <style>
             body {
                 margin: 0;
@@ -296,6 +307,60 @@ def load_info_inspeksi(use_cache=True):
         # Kalau tidak ada cache
         return pd.DataFrame(), "⚠️ Aplikasi Apstard tidak bisa diakses"
 
+def get_invoice_session():
+    """
+    Membuat session login invoice dengan auto-cookie
+    """
+    sess = requests.Session()
+    sess.headers.update({
+        "User-Agent": "Mozilla/5.0",
+        "Accept": "application/json",
+        "X-Requested-With": "XMLHttpRequest"
+    })
+
+    payload = {
+        "username": INVOICE_USERNAME,
+        "password": INVOICE_PASSWORD
+    }
+
+    r = sess.post(INVOICE_LOGIN_URL, json=payload, timeout=15)
+    r.raise_for_status()
+
+    return sess
+
+def load_invoice_data(params=None, use_cache=True):
+    """
+    Ambil data invoice dengan auto relogin jika token expired
+    """
+    cache_file = "invoice.json"
+
+    try:
+        sess = get_invoice_session()
+        r = sess.post(INVOICE_DATA_URL, json=params or {}, timeout=20)
+
+        # Jika server error / token mati
+        if r.status_code in [401, 403, 500]:
+            raise Exception("Session expired")
+
+        data = r.json()
+
+        if use_cache:
+            with open(cache_file, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2)
+
+        return pd.DataFrame(data.get("data", []))
+
+    except Exception as e:
+        print("⚠️ Gagal ambil invoice:", e)
+
+        # fallback cache
+        if use_cache and os.path.exists(cache_file):
+            print("👉 Pakai cache invoice.json")
+            with open(cache_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            return pd.DataFrame(data.get("data", []))
+
+        return pd.DataFrame()
 
 
 def load_pantib(year, use_cache=True):
@@ -388,7 +453,7 @@ def format_tanggal_indonesia(tgl_raw):
 
 @app.route("/unduh_laporan", methods=["GET", "POST"])
 def unduh_laporan():     
-    selected_year = request.form.get("year", "2025")
+    selected_year = request.form.get("year", "2026")
     df = load_data(selected_year)
 
     # Transformasi jenis identifikasi
@@ -640,8 +705,8 @@ def unduh_laporan():
 
 @app.route("/download_excel", methods=["POST"])
 def download_excel():
-    #selected_year = request.form.get("year", "2025")
-    selected_year = 2026
+    selected_year = request.form.get("year", "2026")
+    #selected_year = 2026
     df = load_data(selected_year)
 
     # Transformasi jenis identifikasi
@@ -1024,21 +1089,27 @@ def index():
         )
     
         apstard_status = "⚠️ Aplikasi Apstard tidak bisa diakses"
-    
-    
-    ############PENERTIBANNNNNNNNNN
-    #pantib_selected_year = request.form.get("year", "2025")
-    pantib_selected_year = 2025
+
+    ############PENERTIBANNNNNNNNNN  
+    pantib_selected_year = request.form.get("year", "2025")
     df_pantib = load_pantib(pantib_selected_year, use_cache=True)
+    
+    # Jika data kosong, fallback ke 2025
+    if df_pantib is None or df_pantib.empty:
+        fallback_year = "2025"
+        df_pantib = load_pantib(fallback_year, use_cache=True)
+        pantib_selected_year = fallback_year
+
+
     # Card 1: jumlah pelanggaran
     jumlah_pelanggaran = len(df_pantib)
-    
+
     # Card 2: persentase telah ditertibkan
     total_data = len(df_pantib)
     sudah_ditertibkan = df_pantib["penertiban_no_teguran"].notna().sum()
     persentase_ditertibkan = round((sudah_ditertibkan / total_data) * 100, 2) if total_data > 0 else 0
 
-    selected_year = request.form.get("year", "2025")
+    selected_year = request.form.get("year", "2026")
     df = load_data(selected_year)
     # Tambahkan kolom jenis
     if 'observasi_status_identifikasi_name' in df.columns:
@@ -1307,18 +1378,117 @@ def index():
                                  "#6d98b3", "#91cfe3", "#af8703", "#a83639", "#575759", "#252526",
                                  "#044065", "#d5ad2b", "#884a4c"]
     )
-
-    # === PENANGANAN DENDA ===
-    denda_terbayar = 74013800
-    denda_belum = 3333333
     
-    # Card total
-    total_denda = denda_terbayar + denda_belum
+    # ===== INVOICE DENDA =====
+    urllib3.disable_warnings()
+
+    url = "https://dendaadministratif.postel.go.id/application/invoice/get/data/management"
+
+    cookies = {
+        "XSRF-TOKEN": "eyJpdiI6InNYY3UwV1VhS1RsTXFCb2FOd0cxeFE9PSIsInZhbHVlIjoiNFh4WTE5VVBZWWFWL0tKbUxYUi95R2FHWTRLd0U4THgvQnY4eGt1SjRHbkZFQ0hKcTNZTk9RcUFiMEFrOHR1T3hqOWhkTFNjeXEzdGVpZEJ4RjEzcUdYSE42dXk0d0o0UzA1QlFHTEZSbEs1bHJxT3RBY3NjOVl6aUp4b3ZaVWwiLCJtYWMiOiI2MTcxZjQzMmVhZDdlNmE1Y2ZkYWMzMzQzYjg0YzhmNjI0YTg3YTEwYmNkMzc4NWU0YTczZDdkZDBkMGY3MGUzIiwidGFnIjoiIn0%3D%3D",
+        "bbppt_session": "eyJpdiI6IlozL1FsWVgremIwTzhwbzEra1Q0bUE9PSIsInZhbHVlIjoiTVNZVlFMUGdLYWltM1pQR0gxZ0pjZWJ5SkxITXJuWGoyNVc1STdRMGNGY0RnakFHZDY4cjcvV2s4d0RDWThUL3doZWVIaU5iejhIN3MyRkNjL1ZlR25wdGZCemVaZGV0T3NIUytWaHVIRjREaTAxMHgyRHZCVi9yZFdKNXk0eW0iLCJtYWMiOiIzY2I5ZWYxNzcyYTc0ZDJlMTA4ZjQ1ODFlMDZmMzJjN2E0MTdmMTA5ZGQ2NjdiYjY1NzBmZjVmMTNkNDkzMzFiIiwidGFnIjoiIn0%3D%3D"
+    }
+
+    xsrf_token = urllib.parse.unquote(cookies["XSRF-TOKEN"])
+
+    headers = {
+        "User-Agent": "Mozilla/5.0",
+        "Accept": "application/json",
+        "X-Requested-With": "XMLHttpRequest",
+        "X-XSRF-TOKEN": xsrf_token,
+        "Referer": "https://dendaadministratif.postel.go.id/application/invoice/management",
+        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8"
+    }
+
+    payload = {
+        "draw": 1,
+        "start": 0,
+        "length": 1000,
+
+        "columns[0][data]": "invoice_id",
+        "columns[0][name]": "invoice_id",
+        "columns[0][searchable]": "true",
+        "columns[0][orderable]": "true",
+        "columns[0][search][value]": "",
+        "columns[0][search][regex]": "false",
+
+        "columns[1][data]": "invoice_number",
+        "columns[1][name]": "invoice_number",
+        "columns[1][searchable]": "true",
+        "columns[1][orderable]": "true",
+        "columns[1][search][value]": "",
+        "columns[1][search][regex]": "false",
+
+        "order[0][column]": 0,
+        "order[0][dir]": "desc",
+
+        "search[value]": "",
+        "search[regex]": "false"
+    }
+
+    resp = requests.post(
+        url,
+        headers=headers,
+        cookies=cookies,
+        data=payload,
+        verify=False,
+        timeout=30
+    )
+
+    print(resp.status_code)
+    print(resp.text[:300])
+
+    resp.raise_for_status()
+
+    df_denda = pd.DataFrame(resp.json()["data"])
+    df_denda.to_csv("invoice.csv", index=False)
+    
+    df_invoice = pd.read_csv("invoice.csv")
+    
+    # default output
+    jumlah_invoice = 0
+    denda_terbayar = "Rp.0"
+    denda_belum = "Rp.0"
+    
+    if not df_invoice.empty:
+    
+        # 1️⃣ Hapus baris dengan invoice_status = "Expired"
+        df_invoice = df_invoice[df_invoice["invoice_status"] != "Expired"]
+    
+        # 2️⃣ Filter berdasarkan tahun publish_date
+        # ambil 4 digit tahun dari belakang
+        df_invoice["tahun"] = df_invoice["publish_date"].astype(str).str[-4:]
+        
+        selected_year = request.form.get("year", "2026")
+        df_invoice = df_invoice[df_invoice["tahun"] == str(selected_year)]
+    
+        jumlah_invoice = len(df_invoice)
+    
+        # 3️⃣ Konversi total_amount ke integer
+        df_invoice["total_amount_int"] = df_invoice["total_amount"].apply(rupiah_to_int)
+    
+        # 4️⃣ Hitung denda terbayar & belum
+        total_terbayar = df_invoice.loc[
+            df_invoice["invoice_status"] == "PAID",
+            "total_amount_int"
+        ].sum()
+    
+        total_belum = df_invoice.loc[
+            df_invoice["invoice_status"] == "UNPAID",
+            "total_amount_int"
+        ].sum()
+    
+        # 5️⃣ Konversi kembali ke Rupiah
+        denda_terbayar = int_to_rupiah(total_terbayar)
+        print(denda_terbayar)
+        denda_belum = int_to_rupiah(total_belum)
+        print(denda_belum)
+
     
     # Data untuk Pie Chart (status pembayaran)
     pie_denda_status = pd.DataFrame({
         "Status": ["Denda Terbayar", "Belum Terbayar"],
-        "Jumlah": [44, 0]
+        "Jumlah": [total_terbayar, total_belum]
     })
     pie_denda = px.pie(
         pie_denda_status,
@@ -1452,7 +1622,7 @@ def index():
     <html>
     <head>
         <meta charset="UTF-8">
-        <title>DATA OBSERVASI BALAI MONITOR SFR KELAS II MATARAM</title>
+        <title>REALISASI BALAI MONITOR SFR KELAS II MATARAM</title>
         <link rel="icon" type="image/png" href="{{ url_for('static', filename='D.png') }}">
         <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
         <style>
@@ -1601,13 +1771,26 @@ def index():
         <img src="/static/logo-komdigi2.png" style="height:50px;">
         <img src="/static/djid.png" style="height:50px;">
         <div>
-            <h2 style="margin:0;">Dashboard Capaian Kinerja – Balmon SFR Kelas II Mataram</h2/>
+            <h2 style="margin:0;">Dashboard Realisasi Kinerja – Balmon SFR Kelas II Mataram</h2/>
             <p style="margin:0; font-size:16px; color:#9ca3af;">One-Data Aggregation & Analytics (WANDAA)</p>
         </div>
         
         <!-- Tombol + Pilih Tahun -->
         <div style="display:flex; align-items:flex-end; gap:10px; padding:20px; justify-content:flex-end;">      
             <!-- Tombol -->
+            <!-- Pilih Tahun -->
+            <div style="display:flex; flex-direction:column;">
+                <select name="year" id="year" onchange="autoSubmit('year')";
+                        style="padding:8px 14px; border-radius:6px; border:none; background:#edbc1b; color:white;">
+                    <option value="2021" {% if selected_year == "2021" %}selected{% endif %}>2021</option>
+                    <option value="2022" {% if selected_year == "2022" %}selected{% endif %}>2022</option>
+                    <option value="2023" {% if selected_year == "2023" %}selected{% endif %}>2023</option>
+                    <option value="2024" {% if selected_year == "2024" %}selected{% endif %}>2024</option>
+                    <option value="2025" {% if selected_year == "2025" %}selected{% endif %}>2025</option>
+                    <option value="2026" {% if selected_year == "2026" %}selected{% endif %}>2026</option>
+                </select>
+            </div>
+            
             <button type="submit"
                     style="background:#006db0; color:white; border:none; padding:8px 14px; border-radius:6px;">
                 🔄 Refresh
@@ -1629,6 +1812,50 @@ def index():
             </a>
         </div>
     </div>
+    
+    <!-- Filter OBSMON-->
+    <form method="POST" class="filter-form" id="main-form">
+      
+        <!-- Dropdown filter -->
+        <div class="filter-group">
+            <label for="spt">No SPT</label>
+            <select name="spt" id="spt" onchange="autoSubmit('spt')">
+                {% for spt in spt_options %}
+                <option value="{{ spt }}" {% if spt == selected_spt %}selected{% endif %}>{{ spt }}</option>
+                {% endfor %}
+            </select>
+        </div>
+    
+        <!-- Tambahkan dropdown Kab/Kota -->
+        <div class="filter-group">
+            <label for="kab">Kab/Kota</label>
+            <select name="kab" id="kab" onchange="autoSubmit('kab')">
+                {% for kab in kab_options %}
+                <option value="{{ kab }}" {% if kab == selected_kab %}selected{% endif %}>{{ kab }}</option>
+                {% endfor %}
+            </select>
+        </div>
+    
+        <!-- Tambahkan dropdown Kecamatan -->
+        <div class="filter-group">
+            <label for="kec">Kecamatan</label>
+            <select name="kec" id="kec" onchange="autoSubmit('kec')">
+                {% for kec in kec_options %}
+                <option value="{{ kec }}" {% if kec == selected_kec %}selected{% endif %}>{{ kec }}</option>
+                {% endfor %}
+            </select>
+        </div>
+    
+        <!-- Tambahkan dropdown Catatan -->
+        <div class="filter-group">
+            <label for="cat">Catatan</label>
+            <select name="cat" id="cat" onchange="autoSubmit('cat')">
+                {% for cat in cat_options %}
+                <option value="{{ cat }}" {% if cat == selected_cat %}selected{% endif %}>{{ cat }}</option>
+                {% endfor %}
+            </select>
+        </div>
+    </form>
 
     <!-- Info Cards -->
     <div style="display:grid; grid-template-columns: repeat(5, 1fr); gap:15px; padding:20px;">
@@ -1678,62 +1905,6 @@ def index():
             </div>
         </div>
     </div>
-    
-    <!-- Filter OBSMON-->
-    <form method="POST" class="filter-form" id="main-form">
-        <!-- Pilih Tahun -->
-        <div style="display:flex; flex-direction:column;">
-            <select name="year" id="year" onchange="autoSubmit('year')";
-                    style="padding:8px 14px; border-radius:6px; border:none; background:#edbc1b; color:white;">
-                <option value="2021" {% if selected_year == "2021" %}selected{% endif %}>2021</option>
-                <option value="2022" {% if selected_year == "2022" %}selected{% endif %}>2022</option>
-                <option value="2023" {% if selected_year == "2023" %}selected{% endif %}>2023</option>
-                <option value="2024" {% if selected_year == "2024" %}selected{% endif %}>2024</option>
-                <option value="2025" {% if selected_year == "2025" %}selected{% endif %}>2025</option>
-                <option value="2026" {% if selected_year == "2026" %}selected{% endif %}>2026</option>
-            </select>
-        </div>
-        
-        <!-- Dropdown filter -->
-        <div class="filter-group">
-            <label for="spt">No SPT</label>
-            <select name="spt" id="spt" onchange="autoSubmit('spt')">
-                {% for spt in spt_options %}
-                <option value="{{ spt }}" {% if spt == selected_spt %}selected{% endif %}>{{ spt }}</option>
-                {% endfor %}
-            </select>
-        </div>
-    
-        <!-- Tambahkan dropdown Kab/Kota -->
-        <div class="filter-group">
-            <label for="kab">Kab/Kota</label>
-            <select name="kab" id="kab" onchange="autoSubmit('kab')">
-                {% for kab in kab_options %}
-                <option value="{{ kab }}" {% if kab == selected_kab %}selected{% endif %}>{{ kab }}</option>
-                {% endfor %}
-            </select>
-        </div>
-    
-        <!-- Tambahkan dropdown Kecamatan -->
-        <div class="filter-group">
-            <label for="kec">Kecamatan</label>
-            <select name="kec" id="kec" onchange="autoSubmit('kec')">
-                {% for kec in kec_options %}
-                <option value="{{ kec }}" {% if kec == selected_kec %}selected{% endif %}>{{ kec }}</option>
-                {% endfor %}
-            </select>
-        </div>
-    
-        <!-- Tambahkan dropdown Catatan -->
-        <div class="filter-group">
-            <label for="cat">Catatan</label>
-            <select name="cat" id="cat" onchange="autoSubmit('cat')">
-                {% for cat in cat_options %}
-                <option value="{{ cat }}" {% if cat == selected_cat %}selected{% endif %}>{{ cat }}</option>
-                {% endfor %}
-            </select>
-        </div>
-    </form>
     
     <!-- Modal -->
     <div id="laporanModal"
@@ -1855,14 +2026,8 @@ def index():
     <!-- Info Cards Pantib -->
     <form method="POST" class="filter-form" id="main-form">
     <div style="display:flex; left-content:space-between; align-items:center; margin:10px 10px 10px;">
-        <h2 style="margin:0;">TEMUAN PENERTIBAN</h2>
-        <select name="pantib_year" id="year" onchange="autoSubmit('pantib_year')"
-                style="padding:8px 14px; border-radius:6px; border:none; background:#edbc1b; color:white;">
-            <option value="2023" {% if pantib_selected_year == "2023" %}selected{% endif %}>2023</option>
-            <option value="2024" {% if pantib_selected_year == "2024" %}selected{% endif %}>2024</option>
-            <option value="2025" {% if pantib_selected_year == "2025" %}selected{% endif %}>2025</option>
-            <option value="2026" {% if pantib_selected_year == "2026" %}selected{% endif %}>2026</option>
-        </select>
+        <h2 style="margin:0;">TEMUAN PENERTIBAN {{ pantib_selected_year }}</h2>
+        
     </div>
     </form>
     
@@ -1889,7 +2054,7 @@ def index():
     </div>
         
     <!-- === Chart Penanganan Denda === -->
-    <h2 style="margin:30px 20px 10px;">PENANGANAN DENDA</h2>
+    <h2 style="margin:30px 20px 10px;">PENANGANAN DENDA {{selected_year}}</h2>
     
     <div style="
         display: grid;
@@ -1908,7 +2073,7 @@ def index():
         " 
         onmouseover="this.style.transform='scale(1.03)'; this.style.boxShadow='0 4px 12px rgba(0,0,0,0.4)';"
         onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='0 2px 6px rgba(0,0,0,0.3)';">
-            <h1 style="margin:0; color:#00ade6;">Rp.120.726.900</h1>
+            <h1 style="margin:0; color:#00ade6;">{{denda_terbayar}}</h1>
             <p style="margin:6px 0 0; color:#e5e7eb; font-size:18px;">Denda Terbayar</p>
         </div>
     
@@ -1923,7 +2088,7 @@ def index():
         "
         onmouseover="this.style.transform='scale(1.03)'; this.style.boxShadow='0 4px 12px rgba(0,0,0,0.4)';"
         onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='0 2px 6px rgba(0,0,0,0.3)';">
-            <h1 style="margin:0; color:#edbc1b;">Rp.0</h1>
+            <h1 style="margin:0; color:#edbc1b;">{{denda_belum}}</h1>
             <p style="margin:6px 0 0; color:#e5e7eb; font-size:18px;">Denda Belum Terbayar</p>
         </div>
     </div>
@@ -2210,6 +2375,8 @@ def index():
     capaian_inspeksi = capaian_inspeksi,
     pie_inspeksi_json=pie_inspeksi_json,
     bar_inspeksi_json=bar_inspeksi_json,
+    denda_terbayar=denda_terbayar,
+    denda_belum=denda_belum,
     pie_denda_json=pie_denda_json,
     bar_denda_json=bar_denda_json,
     jumlah_qos=jumlah_qos,
@@ -2220,7 +2387,7 @@ def index():
     
 @app.route("/get_kab/<spt>")
 def get_kab(spt):
-    selected_year = request.form.get("year", "2025")
+    selected_year = request.form.get("year", "2026")
     df = load_data(selected_year)
     if spt != "Semua":
         df = df[df["observasi_no_spt"] == spt]
@@ -2229,7 +2396,7 @@ def get_kab(spt):
 
 @app.route("/get_kec/<spt>/<kab>")
 def get_kec(spt, kab):
-    selected_year = request.form.get("year", "2025")
+    selected_year = request.form.get("year", "2026")
     df = load_data(selected_year)
     if spt != "Semua":
         df = df[df["observasi_no_spt"] == spt]
@@ -2240,7 +2407,7 @@ def get_kec(spt, kab):
 
 @app.route("/get_cat/<spt>/<kab>/<kec>")
 def get_cat(spt, kab, kec):
-    selected_year = request.form.get("year", "2025")
+    selected_year = request.form.get("year", "2026")
     df = load_data(selected_year)
     if spt != "Semua":
         df = df[df["observasi_no_spt"] == spt]
@@ -2250,6 +2417,22 @@ def get_cat(spt, kab, kec):
         df = df[df["observasi_kecamatan_nama"] == kec]
     cat_options = sorted(df["scan_catatan"].dropna().unique().tolist())
     return {"cat_list": cat_options}
+
+def rupiah_to_int(x):
+    """
+    'Rp.1.617.000' -> 1617000
+    """
+    if pd.isna(x):
+        return 0
+    return int(re.sub(r"[^\d]", "", str(x))) or 0
+
+
+def int_to_rupiah(x):
+    """
+    1617000 -> 'Rp.1.617.000'
+    """
+    return f"Rp.{x:,.0f}".replace(",", ".")
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
