@@ -1378,7 +1378,7 @@ def index():
                                  "#6d98b3", "#91cfe3", "#af8703", "#a83639", "#575759", "#252526",
                                  "#044065", "#d5ad2b", "#884a4c"]
     )
-    
+    """"
     # ===== INVOICE DENDA =====
     urllib3.disable_warnings()
 
@@ -1399,7 +1399,7 @@ def index():
         "Referer": "https://dendaadministratif.postel.go.id/application/invoice/management",
         "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8"
     }
-
+    
     payload = {
         "draw": 1,
         "start": 0,
@@ -1442,6 +1442,7 @@ def index():
 
     df_denda = pd.DataFrame(resp.json()["data"])
     df_denda.to_csv("invoice.csv", index=False)
+    """
     
     df_invoice = pd.read_csv("invoice.csv")
     
@@ -1662,10 +1663,10 @@ def index():
             .filter-form2 {
                 display: flex;
                 flex-wrap: wrap;
-                gap: 2px;
-                margin: 2px 0;
+                gap: 1px;
+                margin: 1px 0;
                 background-color: #1e1e1e; /* gelap */
-                padding: 2px;
+                padding: 1px;
                 border-radius: 1px;
                 box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
             }
