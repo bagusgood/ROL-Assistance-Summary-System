@@ -151,7 +151,7 @@ def login():
                 margin: 0;
                 padding: 0;
                 font-family: Arial, sans-serif;
-                background: url('{{ url_for("static", filename="bg-login.png") }}') no-repeat center center fixed;
+                background: url('{{ url_for("static", filename="kolase.png") }}') no-repeat center center fixed;
                 background-size: cover;
                 display: flex;
                 justify-content: center;
@@ -1653,7 +1653,7 @@ def index():
                 display: flex;
                 flex-wrap: wrap;
                 gap: 20px;
-                margin: 25px 0;
+                margin: 2px 0;
                 background-color: #1e1e1e; /* gelap */
                 padding: 20px;
                 border-radius: 10px;
@@ -1665,8 +1665,7 @@ def index():
                 flex-wrap: wrap;
                 gap: 1px;
                 margin: 1px 0;
-                background-color: #1e1e1e; /* gelap */
-                padding: 1px;
+                padding: 0px;
                 border-radius: 1px;
                 box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
             }
@@ -1794,34 +1793,29 @@ def index():
                 <!-- Pilih Tahun -->
                 <div style="display:flex; flex-direction:column;">
                     <select name="year" id="year" onchange="autoSubmit('year')";
-                            style="padding:8px 14px; border-radius:6px; border:none; background:#edbc1b; color:white;">
-                        <option value="2021" {% if selected_year == "2021" %}selected{% endif %}>2021</option>
-                        <option value="2022" {% if selected_year == "2022" %}selected{% endif %}>2022</option>
-                        <option value="2023" {% if selected_year == "2023" %}selected{% endif %}>2023</option>
-                        <option value="2024" {% if selected_year == "2024" %}selected{% endif %}>2024</option>
-                        <option value="2025" {% if selected_year == "2025" %}selected{% endif %}>2025</option>
-                        <option value="2026" {% if selected_year == "2026" %}selected{% endif %}>2026</option>
+                            style="padding:10px 20px; font-size: 16px; border-radius:6px; border:none; background:#006db0; color:white;">
+                        <option value="2021" {% if selected_year == "2021" %}selected{% endif %}>TAHUN 2021</option>
+                        <option value="2022" {% if selected_year == "2022" %}selected{% endif %}>TAHUN 2022</option>
+                        <option value="2023" {% if selected_year == "2023" %}selected{% endif %}>TAHUN 2023</option>
+                        <option value="2024" {% if selected_year == "2024" %}selected{% endif %}>TAHUN 2024</option>
+                        <option value="2025" {% if selected_year == "2025" %}selected{% endif %}>TAHUN 2025</option>
+                        <option value="2026" {% if selected_year == "2026" %}selected{% endif %}>TAHUN 2026</option>
                     </select>
                 </div>
             </form>
-            
-            <button type="submit"
-                    style="background:#006db0; color:white; border:none; padding:8px 14px; border-radius:6px;">
-                🔄 Refresh
-            </button>
         
             <button form="excel-form" type="submit"
-                    style="background:#006db0; color:white; border:none; padding:8px 14px; border-radius:6px;">
+                    style="background:#006db0; color:white; border:none; padding:10px 20px; font-size: 16px; border-radius:6px;">
                 ⬇️ Unduh Rekap
             </button>
         
             <button type="button" onclick="openModal()"
-                    style="background:#006db0; color:white; border:none; padding:8px 14px; border-radius:6px;">
+                    style="background:#e1ae05; color:white; border:none; padding:10px 20px; font-size: 16px; border-radius:6px;">
                 📄 Unduh Nodin
             </button>
         
             <a href="{{ url_for('logout') }}"
-               style="color:white; background:red; border:none; padding:6px 12px; border-radius:6px;">
+               style="color:white; background:red; border:none; padding:10px 20px; font-size: 16px; border-radius:6px;">
                 Logout
             </a>
         </div>
