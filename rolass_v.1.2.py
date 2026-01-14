@@ -63,7 +63,7 @@ def login_required(f):
 # Ambil data dari API / Google Sheet / CSV
 def load_map_data():
     sheet_id = "14rFJPrA2fCVkz-7mQoLQ8khV5nLlsKVv"
-    gid = "1153111178"
+    gid = "301785538"
 
     url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}"
 
@@ -1556,7 +1556,7 @@ def index():
 
     # URL Google Sheet (ubah ke format export CSV)
     sheet_id_qos = "14rFJPrA2fCVkz-7mQoLQ8khV5nLlsKVv"
-    gid_qos = "1153111178"
+    gid_qos = "301785538"
     
     url_qos = f"https://docs.google.com/spreadsheets/d/{sheet_id_qos}/export?format=csv&gid={gid_qos}"
     
@@ -1668,6 +1668,18 @@ def index():
                 padding: 0px;
                 border-radius: 1px;
                 box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+            }
+            
+            .filter-form3 {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 10px;
+                margin: 2px 0;
+                background-color: #1e1e1e; /* gelap */
+                padding: 10px;
+                border-radius: 10px;
+                box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+                color: #e1ae05;
             }
             
             .filter-group label {
@@ -1822,8 +1834,13 @@ def index():
     </div>
     
     <!-- Filter OBSMON-->
+    <form method="POST" class="filter-form3" id="main-form">
+    <div style="display:flex; left-content:space-between; align-items:center; margin:10px 10px 10px;">
+        <img src="/static/vector.png" alt="Data" style="width:60px; height:40px;">
+        <h2 style="margin:0;">  MONITORING KAB/KOTA {{selected_year}}</h2>
+    </div>
+    </form>
     <form method="POST" class="filter-form" id="main-form">
-      
         <!-- Dropdown filter -->
         <div class="filter-group">
             <label for="spt">No SPT</label>
@@ -2032,10 +2049,10 @@ def index():
     </div>
 
     <!-- Info Cards Pantib -->
-    <form method="POST" class="filter-form" id="main-form">
+    <form method="POST" class="filter-form3" id="main-form">
     <div style="display:flex; left-content:space-between; align-items:center; margin:10px 10px 10px;">
+        <img src="/static/vector3.png" alt="Data" style="width:60px; height:40px;">
         <h2 style="margin:0;">TEMUAN PENERTIBAN {{ pantib_selected_year }}</h2>
-        
     </div>
     </form>
     
@@ -2062,7 +2079,12 @@ def index():
     </div>
         
     <!-- === Chart Penanganan Denda === -->
-    <h2 style="margin:30px 20px 10px;">PENANGANAN DENDA {{selected_year}}</h2>
+    <form method="POST" class="filter-form3" id="main-form">
+    <div style="display:flex; left-content:space-between; align-items:center; margin:10px 10px 10px;">
+        <img src="/static/vector3.png" alt="Data" style="width:60px; height:40px;">
+        <h2 style="margin:0;">  PENANGANAN DENDA {{selected_year}}</h2>
+    </div>
+    </form>
     
     <div style="
         display: grid;
@@ -2109,7 +2131,12 @@ def index():
 
     
     <!-- Info Cards Inspeksi -->
-    <h2 style="margin:30px 20px 10px;">PEMERIKSAAN MICROWAVE LINK</h2>
+    <form method="POST" class="filter-form3" id="main-form">
+    <div style="display:flex; left-content:space-between; align-items:center; margin:10px 10px 10px;">
+        <img src="/static/vector.png" alt="Data" style="width:60px; height:40px;">
+        <h2 style="margin:0;">PEMERIKSAAN MICROWAVE LINK {{selected_year}}</h2>
+    </div>
+    </form>
     <div style="display:flex; gap:15px; padding:20px; flex-wrap:wrap;">
         <div style="flex:1; min-width:200px; background:#1e293b; padding:15px; border-radius:8px; display:flex; align-items:center; gap:10px;">
             <div style="font-size:2rem;">📊</div>
@@ -2141,9 +2168,12 @@ def index():
     {% endif %}
 
     <!-- ================= DASHBOARD QOS & SPEED ================= -->
-    <h2 style="margin:30px 20px 10px;">
-        📡 KUALITAS & PERFORMA JARINGAN SELULER
-    </h2>
+    <form method="POST" class="filter-form3" id="main-form">
+    <div style="display:flex; left-content:space-between; align-items:center; margin:10px 10px 10px;">
+        <img src="/static/vector.png" alt="Data" style="width:60px; height:40px;">
+        <h2 style="margin:0;">KUALITAS LAYANAN JARINGAN SELULER {{selected_year}}</h2>
+    </div>
+    </form>
     
     <div style="
         display:grid;
@@ -2193,7 +2223,7 @@ def index():
                      style="height:100%; width:0%; background:linear-gradient(90deg,#ef4444,#eab308,#22c55e);">
                 </div>
             </div>
-            <small style="opacity:0.7;">Skala hingga 50 Mbps</small>
+            <small style="opacity:0.7;">Skala hingga 100 Mbps</small>
         </div>
     
         <!-- FILTER OPERATOR -->
@@ -2251,7 +2281,7 @@ def index():
     
     // batas skala (bisa diubah)
     const MAX_DOWNLOAD = 100; // Mbps
-    const MAX_UPLOAD = 50;   // Mbps
+    const MAX_UPLOAD = 100;   // Mbps
     
     function updateSpeedCards() {
         const selectedOperators = Array.from(
