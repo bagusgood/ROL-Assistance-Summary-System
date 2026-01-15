@@ -705,7 +705,7 @@ def unduh_laporan():
 
 @app.route("/download_excel", methods=["POST"])
 def download_excel():
-    selected_year = request.form.get("year", "2026")
+    selected_year = request.form.get("year", "2025")
     df = load_data(selected_year)
 
     # Transformasi jenis identifikasi
@@ -735,6 +735,19 @@ def download_excel():
 
     if filt.empty:
         return "<h3>Data kosong, tidak bisa disimpan.</h3>"
+    
+    # ===============================
+    # DATA KHUSUS ISR TAHUNAN
+    # (hanya berdasarkan tahun & kab)
+    # ===============================
+    df_tahunan = df.copy()
+    
+    # Filter hanya berdasarkan Kab/Kota (jika dipilih)
+    if selected_kab != "Semua":
+        df_tahunan = df_tahunan[
+            df_tahunan["observasi_kota_nama"].astype(str).str.strip().str.upper()
+            == selected_kab.strip().upper()
+        ]
 
     # Ringkasan
     jumlah_kota = filt['observasi_kota_nama'].nunique()
@@ -787,11 +800,80 @@ def download_excel():
 
         # Hitung persen kesesuaian
         persen_sesuai_isr = round((jumlah_sesuai_isr / jumlah_target_isr * 100), 2) if jumlah_target_isr > 0 else 0
+        if persen_sesuai_isr > 100:
+            persen_sesuai_isr = 100
+        else:
+            persen_sesuai_isr = persen_sesuai_isr
     
     except Exception as e:
         print("Gagal hitung kesesuaian ISR:", e)
         jumlah_sesuai_isr, jumlah_target_isr, persen_sesuai_isr = 0, 0, 0
 
+    # ===============================
+    # HITUNG ISR TAHUNAN (TIDAK TERGANTUNG SPT)
+    # ===============================
+    try:
+        # Samakan tipe data
+        df_tahunan["observasi_frekuensi"] = pd.to_numeric(
+            df_tahunan["observasi_frekuensi"], errors="coerce"
+        )
+    
+        # Ambil kota termonitor dalam setahun
+        kota_tahunan = (
+            df_tahunan["observasi_kota_nama"]
+            .dropna()
+            .astype(str)
+            .str.strip()
+            .str.upper()
+            .unique()
+        )
+    
+        # Filter target ISR berdasarkan kota tahunan
+        isr_tahunan = df_ISR[
+            df_ISR["Kab/Kota"].astype(str).str.strip().str.upper().isin(kota_tahunan)
+        ]
+    
+        # Observasi unik tahunan (hindari duplikat SPT)
+        obs_tahunan = (
+            df_tahunan
+            .groupby(["observasi_frekuensi", "observasi_sims_client_name", "observasi_kota_nama"])
+            .size()
+            .reset_index(name="Jumlah")
+            .rename(columns={
+                "observasi_frekuensi": "Frekuensi",
+                "observasi_sims_client_name": "Identifikasi",
+                "observasi_kota_nama": "Kab/Kota"
+            })
+        )
+    
+        # Target ISR unik tahunan
+        isr_tahunan_grp = (
+            isr_tahunan
+            .groupby(["Frekuensi", "Kab/Kota"])
+            .size()
+            .reset_index(name="Jumlah")
+        )
+    
+        # Cocokkan
+        merged_tahunan = pd.merge(
+            obs_tahunan,
+            isr_tahunan_grp,
+            on=["Frekuensi", "Kab/Kota"],
+            how="inner"
+        )
+    
+        jumlah_sesuai_isr_tahunan = len(merged_tahunan)
+        jumlah_target_isr_tahunan = len(isr_tahunan_grp)
+    
+        persen_sesuai_isr_tahunan = round(
+            (jumlah_sesuai_isr_tahunan / jumlah_target_isr_tahunan * 100), 2
+        ) if jumlah_target_isr_tahunan > 0 else 0
+    
+    except Exception as e:
+        print("Gagal hitung ISR tahunan:", e)
+        jumlah_sesuai_isr_tahunan = 0
+        jumlah_target_isr_tahunan = 0
+        persen_sesuai_isr_tahunan = 0
 
 
     jumlah_iden = len(filt[filt['jenis'] == 'Teridentifikasi'])
@@ -874,6 +956,10 @@ def download_excel():
     add_labeled_row("Jumlah Data Rekap:", jumlah_total)
     add_labeled_row("Jumlah Stasiun Radio Teridentifikasi:", f"{jumlah_iden} ({persen_teridentifikasi}%)")
     add_labeled_row("Jumlah Stasiun Radio Sesuai ISR:", f"{jumlah_sesuai_isr} ({persen_sesuai_isr}%)")
+    add_labeled_row(
+        "Jumlah Stasiun Radio Sesuai ISR (Tahunan):",
+        f"{jumlah_sesuai_isr_tahunan} ({persen_sesuai_isr_tahunan}%)"
+    )
 
     add_centered_row("=" * 60)
     
@@ -1222,7 +1308,6 @@ def index():
         
         jumlah_sesuai_isr = len(merged)
 
-
         # Ambil kota yang termonitor dari data observasi
         kota_termonitor = filt['observasi_kota_nama'].dropna().astype(str).str.strip().str.upper().unique()
 
@@ -1231,9 +1316,13 @@ def index():
     
         # Hitung target ISR total (jumlah baris, karena tidak ada kolom "Jumlah ISR")
         jumlah_target_isr = len(target_match) if not target_match.empty else 0
-
+        
         # Hitung persen kesesuaian
         persen_sesuai_isr = round((jumlah_sesuai_isr / jumlah_target_isr * 100), 2) if jumlah_target_isr > 0 else 0
+        if persen_sesuai_isr > 100:
+            persen_sesuai_isr = 100
+        else:
+            persen_sesuai_isr = persen_sesuai_isr
     
     except Exception as e:
         print("Gagal hitung kesesuaian ISR:", e)
