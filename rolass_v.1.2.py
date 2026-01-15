@@ -706,7 +706,6 @@ def unduh_laporan():
 @app.route("/download_excel", methods=["POST"])
 def download_excel():
     selected_year = request.form.get("year", "2026")
-    #selected_year = 2026
     df = load_data(selected_year)
 
     # Transformasi jenis identifikasi
@@ -1806,7 +1805,6 @@ def index():
                 <div style="display:flex; flex-direction:column;">
                     <select name="year" id="year" onchange="autoSubmit('year')";
                             style="padding:10px 20px; font-size: 16px; border-radius:6px; border:none; background:#006db0; color:white;">
-                        <option value="2021" {% if selected_year == "2021" %}selected{% endif %}>TAHUN 2021</option>
                         <option value="2022" {% if selected_year == "2022" %}selected{% endif %}>TAHUN 2022</option>
                         <option value="2023" {% if selected_year == "2023" %}selected{% endif %}>TAHUN 2023</option>
                         <option value="2024" {% if selected_year == "2024" %}selected{% endif %}>TAHUN 2024</option>
@@ -1837,50 +1835,65 @@ def index():
     <form method="POST" class="filter-form3" id="main-form">
     <div style="display:flex; left-content:space-between; align-items:center; margin:10px 10px 10px;">
         <img src="/static/vector.png" alt="Data" style="width:60px; height:40px;">
-        <h2 style="margin:0;">  MONITORING KAB/KOTA {{selected_year}}</h2>
+        <h2 style="margin:0;">MONITORING KAB/KOTA {{selected_year}}</h2>
     </div>
     </form>
-    <form method="POST" class="filter-form" id="main-form">
-        <!-- Dropdown filter -->
+    
+    <form method="POST" class="filter-form" id="filter-form">
+        
+        <!-- Tahun -->
         <div class="filter-group">
-            <label for="spt">No SPT</label>
-            <select name="spt" id="spt" onchange="autoSubmit('spt')">
-                {% for spt in spt_options %}
-                <option value="{{ spt }}" {% if spt == selected_spt %}selected{% endif %}>{{ spt }}</option>
-                {% endfor %}
-            </select>
+        <select name="year" onchange="this.form.submit()">
+            <option value="2022" {% if selected_year == "2022" %}selected{% endif %}>TAHUN 2022</option>
+            <option value="2023" {% if selected_year == "2023" %}selected{% endif %}>TAHUN 2023</option>
+            <option value="2024" {% if selected_year == "2024" %}selected{% endif %}>TAHUN 2024</option>
+            <option value="2025" {% if selected_year == "2025" %}selected{% endif %}>TAHUN 2025</option>
+            <option value="2026" {% if selected_year == "2026" %}selected{% endif %}>TAHUN 2026</option>
+        </select>
         </div>
     
-        <!-- Tambahkan dropdown Kab/Kota -->
+        <!-- SPT -->
         <div class="filter-group">
-            <label for="kab">Kab/Kota</label>
-            <select name="kab" id="kab" onchange="autoSubmit('kab')">
-                {% for kab in kab_options %}
-                <option value="{{ kab }}" {% if kab == selected_kab %}selected{% endif %}>{{ kab }}</option>
-                {% endfor %}
-            </select>
+        <label for="spt">No SPT</label>
+        <select name="spt" onchange="this.form.submit()">
+            {% for spt in spt_options %}
+            <option value="{{ spt }}" {% if spt == selected_spt %}selected{% endif %}>{{ spt }}</option>
+            {% endfor %}
+        </select>
         </div>
     
-        <!-- Tambahkan dropdown Kecamatan -->
+        <!-- Kab/Kota -->
         <div class="filter-group">
-            <label for="kec">Kecamatan</label>
-            <select name="kec" id="kec" onchange="autoSubmit('kec')">
-                {% for kec in kec_options %}
-                <option value="{{ kec }}" {% if kec == selected_kec %}selected{% endif %}>{{ kec }}</option>
-                {% endfor %}
-            </select>
+        <label for="kab">Kab/Kota</label>
+        <select name="kab" onchange="this.form.submit()">
+            {% for kab in kab_options %}
+            <option value="{{ kab }}" {% if kab == selected_kab %}selected{% endif %}>{{ kab }}</option>
+            {% endfor %}
+        </select>
         </div>
     
-        <!-- Tambahkan dropdown Catatan -->
+        <!-- Kecamatan -->
         <div class="filter-group">
-            <label for="cat">Catatan</label>
-            <select name="cat" id="cat" onchange="autoSubmit('cat')">
-                {% for cat in cat_options %}
-                <option value="{{ cat }}" {% if cat == selected_cat %}selected{% endif %}>{{ cat }}</option>
-                {% endfor %}
-            </select>
+        <label for="kec">Kecamatan</label>
+        <select name="kec" onchange="this.form.submit()">
+            {% for kec in kec_options %}
+            <option value="{{ kec }}" {% if kec == selected_kec %}selected{% endif %}>{{ kec }}</option>
+            {% endfor %}
+        </select>
         </div>
+    
+        <!-- Catatan -->
+        <div class="filter-group">
+        <label for="cat">Catatan</label>
+        <select name="cat" onchange="this.form.submit()">
+            {% for cat in cat_options %}
+            <option value="{{ cat }}" {% if cat == selected_cat %}selected{% endif %}>{{ cat }}</option>
+            {% endfor %}
+        </select>
+        </div>
+    
     </form>
+
 
     <!-- Info Cards -->
     <div style="display:grid; grid-template-columns: repeat(5, 1fr); gap:15px; padding:20px;">
@@ -1936,7 +1949,6 @@ def index():
          style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index: 99999;">
       <div style="background:white; width:400px; margin:100px auto; padding:20px; border-radius:8px; position:relative; z-index: 100000;">
         <h3>Isi Nama Pelaksana</h3>
-    
         <!-- Form di dalam modal -->
         <form id="laporanForm" method="POST" action="/unduh_laporan">
           <!-- Hidden filter biar tetap terkirim -->
