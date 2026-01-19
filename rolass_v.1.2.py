@@ -31,6 +31,8 @@ import folium
 from folium.plugins import MarkerCluster
 import urllib3
 import urllib.parse
+import matplotlib.pyplot as plt
+
 
 app = Flask(__name__)
 app.secret_key = "rahasia_super"  # ganti dengan secret key lebih kuat
@@ -48,6 +50,210 @@ INVOICE_DATA_URL = f"{INVOICE_BASE_URL}/application/invoice/get/data/management"
 
 INVOICE_USERNAME = "pic1_upt_mataram"
 INVOICE_PASSWORD = "password"
+
+UPLOAD_FOLDER = "uploads"
+STATIC_FOLDER = "static"
+
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(STATIC_FOLDER, exist_ok=True)
+
+# =====================================================
+# FREQUENCY RANGES (Hz)
+# =====================================================
+FREQ_RANGES = {
+    "87–108 MHz": (87e6, 108e6),
+    "108–137 MHz": (108e6, 137e6),
+    "137–174 MHz": (137e6, 174e6),
+    "174–230 MHz": (174e6, 230e6),
+    "300–430 MHz": (300e6, 430e6),
+    "430–460 MHz": (430e6, 460e6),
+    "460–470 MHz": (460e6, 470e6),
+    "478–806 MHz": (478e6, 806e6),
+    "806–880 MHz": (806e6, 880e6),
+    
+    "925–960 MHz": (925e6, 960e6),
+    "1427–1518 MHz": (1427e6, 1518e6),
+    "1805–1880 MHz": (1805e6, 1880e6),
+    "2110–2170 MHz": (2110e6, 2170e6),
+    "2170–2200 MHz": (2170e6, 2200e6),
+    "2300–2400 MHz": (2300e6, 2400e6),
+}
+
+def load_csv_spectrum(filepath):
+    encodings = ["utf-8", "latin1", "cp1252"]
+
+    for enc in encodings:
+        try:
+            df = pd.read_csv(filepath, encoding=enc)
+            break
+        except UnicodeDecodeError:
+            continue
+    else:
+        raise ValueError("Gagal membaca CSV (encoding tidak dikenali)")
+
+    df.columns = df.columns.str.strip()
+    return df[["Frequency (Hz)", "Level (dBµV/m)"]].dropna()
+
+
+def plot_spectrum_per_band(df):
+    plot_urls = []
+
+    for band, (fmin, fmax) in FREQ_RANGES.items():
+        df_band = df[
+            (df["Frequency (Hz)"] >= fmin) &
+            (df["Frequency (Hz)"] <= fmax)
+        ]
+
+        if df_band.empty:
+            continue
+
+        plt.figure(figsize=(10, 5))
+        plt.plot(
+            df_band["Frequency (Hz)"] / 1e6,
+            df_band["Level (dBµV/m)"]
+        )
+
+        plt.xlabel("Frequency (MHz)")
+        plt.ylabel("Level (dBµV/m)")
+        plt.title(f"Spectrum {band}")
+        plt.grid(True)
+
+        safe_band = band.replace("–", "-").replace(" ", "")
+        filename = f"spectrum_{safe_band}.png"
+        filepath = os.path.join(STATIC_FOLDER, filename)
+
+        plt.savefig(filepath, dpi=300, bbox_inches="tight")
+        plt.close()
+
+        plot_urls.append(f"/static/{filename}")
+
+    return plot_urls
+
+@app.route("/plotting", methods=["GET", "POST"])
+def Plotting():
+    plot_urls = None
+
+    if request.method == "POST":
+        file = request.files.get("file")
+        if file and file.filename.lower().endswith(".csv"):
+            filepath = os.path.join(UPLOAD_FOLDER, file.filename)
+            file.save(filepath)
+
+            df = load_csv_spectrum(filepath)
+            plot_urls = plot_spectrum_per_band(df)
+
+    HTML = """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Spectrum Plotting</title>
+        <style>
+            body {
+                font-family: Arial, sans-serif;
+                background: #f4f6f9;
+                margin: 0;
+                padding: 40px;
+            }
+            .container {
+                max-width: 900px;
+                margin: auto;
+            }
+            .card {
+                background: white;
+                padding: 25px;
+                border-radius: 10px;
+                box-shadow: 0 4px 10px rgba(0,0,0,0.08);
+            }
+            h2 {
+                margin-top: 0;
+                color: #333;
+            }
+            .upload-box {
+                border: 2px dashed #e1ae05;
+                padding: 25px;
+                border-radius: 10px;
+                text-align: center;
+                background: #fffbea;
+            }
+            input[type=file] {
+                margin-top: 15px;
+            }
+            button {
+                margin-top: 20px;
+                background: #e1ae05;
+                color: white;
+                border: none;
+                padding: 10px 25px;
+                font-size: 16px;
+                border-radius: 6px;
+                cursor: pointer;
+            }
+            button:hover {
+                background: #c89604;
+            }
+            .plots {
+                margin-top: 30px;
+            }
+            .plot-card {
+                background: white;
+                padding: 15px;
+                border-radius: 10px;
+                box-shadow: 0 3px 8px rgba(0,0,0,0.08);
+                margin-bottom: 25px;
+                text-align: center;
+            }
+            .plot-card img {
+                width: 100%;
+                max-width: 800px;
+                border-radius: 6px;
+            }
+            .footer {
+                text-align: center;
+                margin-top: 40px;
+                color: #777;
+                font-size: 13px;
+            }
+        </style>
+    </head>
+    
+    <body>
+    <div class="container">
+    
+        <div class="card">
+            <h2>📈 Spectrum Plotting</h2>
+            <p>Upload file CSV hasil pengukuran spektrum frekuensi.</p>
+    
+            <div class="upload-box">
+                <form method="POST" enctype="multipart/form-data">
+                    <strong>Pilih File CSV</strong><br>
+                    <input type="file" name="file" accept=".csv" required>
+                    <br>
+                    <button type="submit">Upload & Plot</button>
+                </form>
+            </div>
+        </div>
+    
+        {% if plot_urls %}
+        <div class="plots">
+            {% for url in plot_urls %}
+            <div class="plot-card">
+                <img src="{{ url }}">
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+    
+        <div class="footer">
+            ROL Assistance Summary System
+        </div>
+    
+    </div>
+    </body>
+    </html>
+    """
+
+
+    return render_template_string(HTML, plot_urls=plot_urls)
 
 
 # Middleware untuk proteksi halaman
@@ -1913,6 +2119,12 @@ def index():
                 📄 Unduh Nodin
             </button>
         
+            <a href="{{ url_for('Plotting') }}"
+                   style="color:white; background:#e1ae05; border:none; padding:10px 20px; font-size:16px; border-radius:6px; text-decoration:none;">
+                    Plotting
+                </a>
+            </a>
+            
             <a href="{{ url_for('logout') }}"
                style="color:white; background:red; border:none; padding:10px 20px; font-size: 16px; border-radius:6px;">
                 Logout
