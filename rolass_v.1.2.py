@@ -79,11 +79,16 @@ FREQ_RANGES = {
     "2300–2400 MHz": (2300e6, 2400e6),
 }
 
-def load_csv_spectrum(filepath):
+def load_csv_spectrum(filepath, file_type):
     import pandas as pd
 
     # ===============================
-    # 1. Baca CSV (multi-encoding)
+    # 1. Tentukan skiprows
+    # ===============================
+    skiprows = 20 if file_type == "TCI" else None
+
+    # ===============================
+    # 2. Baca CSV (multi-encoding)
     # ===============================
     encodings = ["utf-8", "latin1", "cp1252"]
     df = None
@@ -91,7 +96,7 @@ def load_csv_spectrum(filepath):
 
     for enc in encodings:
         try:
-            df = pd.read_csv(filepath, encoding=enc)
+            df = pd.read_csv(filepath, encoding=enc, skiprows=skiprows)
             break
         except Exception as e:
             last_error = e
@@ -100,7 +105,7 @@ def load_csv_spectrum(filepath):
         raise ValueError(f"Gagal membaca CSV: {last_error}")
 
     # ===============================
-    # 2. Normalisasi nama kolom
+    # 3. Normalisasi nama kolom
     # ===============================
     df.columns = (
         df.columns.astype(str)
@@ -109,7 +114,7 @@ def load_csv_spectrum(filepath):
     )
 
     # ===============================
-    # 3. Deteksi kolom Frequency
+    # 4. Deteksi kolom Frequency
     # ===============================
     freq_cols = []
     freq_unit = "Hz"
@@ -126,10 +131,10 @@ def load_csv_spectrum(filepath):
             f"Kolom Frequency tidak ditemukan. Kolom tersedia: {list(df.columns)}"
         )
 
-    freq_col = freq_cols[0]  # ambil satu saja
+    freq_col = freq_cols[0]
 
     # ===============================
-    # 4. Deteksi kolom Level
+    # 5. Deteksi kolom Level
     # ===============================
     level_cols = []
     for c in df.columns:
@@ -145,35 +150,33 @@ def load_csv_spectrum(filepath):
     level_col = level_cols[0]
 
     # ===============================
-    # 5. Ambil sebagai SERIES (anti duplikat)
+    # 6. Ambil sebagai SERIES
     # ===============================
     freq_series = df[freq_col]
     level_series = df[level_col]
 
     # ===============================
-    # 6. Bersihkan Frequency
+    # 7. Bersihkan Frequency
     # ===============================
     freq_series = (
         freq_series.astype(str)
         .str.replace(",", ".", regex=False)
         .str.replace(r"[^0-9\.]", "", regex=True)
     )
-
     freq_series = pd.to_numeric(freq_series, errors="coerce")
 
     # ===============================
-    # 7. Bersihkan Level
+    # 8. Bersihkan Level
     # ===============================
     level_series = (
         level_series.astype(str)
         .str.replace(",", ".", regex=False)
         .str.replace(r"[^0-9\.\-]", "", regex=True)
     )
-
     level_series = pd.to_numeric(level_series, errors="coerce")
 
     # ===============================
-    # 8. Gabungkan & drop NaN
+    # 9. Gabungkan & drop NaN
     # ===============================
     df_clean = pd.DataFrame({
         "Frequency (Hz)": freq_series,
@@ -181,13 +184,12 @@ def load_csv_spectrum(filepath):
     }).dropna()
 
     # ===============================
-    # 9. Konversi MHz ke Hz
+    # 10. Konversi MHz ke Hz
     # ===============================
     if freq_unit == "MHz":
         df_clean["Frequency (Hz)"] *= 1e6
 
     return df_clean
-
 
 def plot_spectrum_per_band(df):
     plot_urls = []
@@ -226,15 +228,27 @@ def plot_spectrum_per_band(df):
 @app.route("/plotting", methods=["GET", "POST"])
 def Plotting():
     plot_urls = None
+    error_msg = None
 
     if request.method == "POST":
-        file = request.files.get("file")
-        if file and file.filename.lower().endswith(".csv"):
+        try:
+            file = request.files.get("file")
+            file_type = request.form.get("file_type")
+
+            if not file or not file.filename.lower().endswith(".csv"):
+                raise ValueError("File CSV tidak valid")
+
+            if not file_type:
+                raise ValueError("Jenis file pengukuran belum dipilih")
+
             filepath = os.path.join(UPLOAD_FOLDER, file.filename)
             file.save(filepath)
 
-            df = load_csv_spectrum(filepath)
+            df = load_csv_spectrum(filepath, file_type)
             plot_urls = plot_spectrum_per_band(df)
+
+        except Exception as e:
+            error_msg = str(e)
 
     HTML = """
     <!DOCTYPE html>
@@ -269,8 +283,10 @@ def Plotting():
                 text-align: center;
                 background: #fffbea;
             }
-            input[type=file] {
-                margin-top: 15px;
+            select, input[type=file] {
+                width: 100%;
+                padding: 8px;
+                margin-top: 10px;
             }
             button {
                 margin-top: 20px;
@@ -284,6 +300,13 @@ def Plotting():
             }
             button:hover {
                 background: #c89604;
+            }
+            .error {
+                margin-top: 15px;
+                padding: 10px;
+                background: #ffecec;
+                color: #b00000;
+                border-radius: 6px;
             }
             .plots {
                 margin-top: 30px;
@@ -309,24 +332,39 @@ def Plotting():
             }
         </style>
     </head>
-    
+
     <body>
     <div class="container">
-    
         <div class="card">
             <h2>📈 Spectrum Plotting</h2>
             <p>Upload file CSV hasil pengukuran spektrum frekuensi.</p>
-    
+
             <div class="upload-box">
                 <form method="POST" enctype="multipart/form-data">
-                    <strong>Pilih File CSV</strong><br>
+
+                    <label><b>Jenis File Pengukuran</b></label>
+                    <select name="file_type" required>
+                        <option value="">-- Pilih Jenis File --</option>
+                        <option value="ARGUS">ARGUS</option>
+                        <option value="ARGUS V6">ARGUS V6</option>
+                        <option value="LS TELCOM">LS TELCOM</option>
+                        <option value="TCI">TCI</option>
+                    </select>
+
+                    <label style="margin-top:15px; display:block;"><b>Pilih File CSV</b></label>
                     <input type="file" name="file" accept=".csv" required>
-                    <br>
+
                     <button type="submit">Upload & Plot</button>
                 </form>
+
+                {% if error_msg %}
+                <div class="error">
+                    <b>Error:</b> {{ error_msg }}
+                </div>
+                {% endif %}
             </div>
         </div>
-    
+
         {% if plot_urls %}
         <div class="plots">
             {% for url in plot_urls %}
@@ -336,18 +374,21 @@ def Plotting():
             {% endfor %}
         </div>
         {% endif %}
-    
+
         <div class="footer">
             ROL Assistance Summary System
         </div>
-    
     </div>
     </body>
     </html>
     """
 
+    return render_template_string(
+        HTML,
+        plot_urls=plot_urls,
+        error_msg=error_msg
+    )
 
-    return render_template_string(HTML, plot_urls=plot_urls)
 
 
 # Middleware untuk proteksi halaman
