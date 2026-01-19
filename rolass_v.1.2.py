@@ -80,19 +80,113 @@ FREQ_RANGES = {
 }
 
 def load_csv_spectrum(filepath):
+    import pandas as pd
+
+    # ===============================
+    # 1. Baca CSV (multi-encoding)
+    # ===============================
     encodings = ["utf-8", "latin1", "cp1252"]
+    df = None
+    last_error = None
 
     for enc in encodings:
         try:
             df = pd.read_csv(filepath, encoding=enc)
             break
-        except UnicodeDecodeError:
-            continue
-    else:
-        raise ValueError("Gagal membaca CSV (encoding tidak dikenali)")
+        except Exception as e:
+            last_error = e
 
-    df.columns = df.columns.str.strip()
-    return df[["Frequency (Hz)", "Level (dBµV/m)"]].dropna()
+    if df is None:
+        raise ValueError(f"Gagal membaca CSV: {last_error}")
+
+    # ===============================
+    # 2. Normalisasi nama kolom
+    # ===============================
+    df.columns = (
+        df.columns.astype(str)
+        .str.strip()
+        .str.replace("\n", " ")
+    )
+
+    # ===============================
+    # 3. Deteksi kolom Frequency
+    # ===============================
+    freq_cols = []
+    freq_unit = "Hz"
+
+    for c in df.columns:
+        cl = c.lower()
+        if "frequency" in cl:
+            freq_cols.append(c)
+            if "mhz" in cl:
+                freq_unit = "MHz"
+
+    if not freq_cols:
+        raise ValueError(
+            f"Kolom Frequency tidak ditemukan. Kolom tersedia: {list(df.columns)}"
+        )
+
+    freq_col = freq_cols[0]  # ambil satu saja
+
+    # ===============================
+    # 4. Deteksi kolom Level
+    # ===============================
+    level_cols = []
+    for c in df.columns:
+        cl = c.lower()
+        if "level" in cl or "field strength" in cl:
+            level_cols.append(c)
+
+    if not level_cols:
+        raise ValueError(
+            f"Kolom Level tidak ditemukan. Kolom tersedia: {list(df.columns)}"
+        )
+
+    level_col = level_cols[0]
+
+    # ===============================
+    # 5. Ambil sebagai SERIES (anti duplikat)
+    # ===============================
+    freq_series = df[freq_col]
+    level_series = df[level_col]
+
+    # ===============================
+    # 6. Bersihkan Frequency
+    # ===============================
+    freq_series = (
+        freq_series.astype(str)
+        .str.replace(",", ".", regex=False)
+        .str.replace(r"[^0-9\.]", "", regex=True)
+    )
+
+    freq_series = pd.to_numeric(freq_series, errors="coerce")
+
+    # ===============================
+    # 7. Bersihkan Level
+    # ===============================
+    level_series = (
+        level_series.astype(str)
+        .str.replace(",", ".", regex=False)
+        .str.replace(r"[^0-9\.\-]", "", regex=True)
+    )
+
+    level_series = pd.to_numeric(level_series, errors="coerce")
+
+    # ===============================
+    # 8. Gabungkan & drop NaN
+    # ===============================
+    df_clean = pd.DataFrame({
+        "Frequency (Hz)": freq_series,
+        "Level (dBµV/m)": level_series
+    }).dropna()
+
+    # ===============================
+    # 9. Konversi MHz ke Hz
+    # ===============================
+    if freq_unit == "MHz":
+        df_clean["Frequency (Hz)"] *= 1e6
+
+    return df_clean
 
 
 def plot_spectrum_per_band(df):
