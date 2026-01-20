@@ -81,72 +81,97 @@ FREQ_RANGES = {
     "2300–2400 MHz": (2300e6, 2400e6),
 }
 
+import pandas as pd
+import io
+
 def load_csv_spectrum(filepath, file_type):
-    import pandas as pd
-    import csv
-    from io import StringIO
+    """
+    Load CSV spectrum file from various measurement systems
+    Output columns:
+        - Frequency (Hz)
+        - Level (dBµV/m)
+    """
 
-    # ===============================
-    # Baca file mentah
-    # ===============================
-    with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
-        lines = f.readlines()
+    # ======================================================
+    # 1. KHUSUS LS TELCOM (PAKAI LOGIKA ANDA, STABIL)
+    # ======================================================
+    if file_type == "LS TELCOM":
+        try:
+            df = pd.read_csv(
+                filepath,
+                sep=";",
+                skiprows=11,
+                encoding="latin1",
+                engine="python"
+            )
 
-    # ===============================
-    # Cari baris header
-    # ===============================
-    header_row = None
-    for i, line in enumerate(lines):
-        if "frequency" in line.lower():
-            header_row = i
+            # Hapus 3 kolom pertama
+            df = df.iloc[:, 3:]
+
+            # Transpose
+            df_t = df.T.reset_index()
+            df_t.rename(columns={"index": "Frequency (Hz)"}, inplace=True)
+
+            # Numeric conversion
+            df_t["Frequency (Hz)"] = (
+                df_t["Frequency (Hz)"]
+                .astype(str)
+                .str.replace(",", ".", regex=False)
+                .str.replace(r"[^0-9\.]", "", regex=True)
+            )
+            df_t["Frequency (Hz)"] = pd.to_numeric(df_t["Frequency (Hz)"], errors="coerce")
+
+            for col in df_t.columns[1:]:
+                df_t[col] = pd.to_numeric(df_t[col], errors="coerce")
+
+            # Level = maksimum
+            df_t["Level (dBµV/m)"] = df_t.iloc[:, 1:].max(axis=1)
+
+            df_final = df_t[["Frequency (Hz)", "Level (dBµV/m)"]].dropna()
+            return df_final
+
+        except Exception as e:
+            raise ValueError(f"Gagal membaca CSV LS TELCOM: {e}")
+
+    # ======================================================
+    # 2. FILE LAIN (ARGUS, ARGUS V6, TCI)
+    # ======================================================
+    # Baca file mentah (byte) dulu → inilah kunci error "save as"
+    with open(filepath, "rb") as f:
+        raw = f.read()
+
+    # Daftar encoding & delimiter yang dicoba
+    encodings = ["utf-8-sig", "utf-8", "latin1", "utf-16"]
+    delimiters = [";", ",", "\t", "|"]
+
+    df = None
+    last_error = ""
+
+    for enc in encodings:
+        for sep in delimiters:
+            try:
+                text = raw.decode(enc, errors="strict")
+                buffer = io.StringIO(text)
+
+                if file_type == "TCI":
+                    df_try = pd.read_csv(buffer, sep=sep, skiprows=20, engine="python")
+                else:
+                    df_try = pd.read_csv(buffer, sep=sep, engine="python")
+
+                if df_try.shape[1] >= 2:
+                    df = df_try
+                    break
+            except Exception as e:
+                last_error = f"Encoding {enc}, delimiter '{sep}' → {e}"
+        if df is not None:
             break
 
-    if header_row is None:
-        raise ValueError("Header dengan kolom 'Frequency' tidak ditemukan")
+    if df is None:
+        raise ValueError(f"Gagal membaca CSV. Detail: {last_error}")
 
-    # ===============================
-    # Aturan khusus TCI
-    # ===============================
-    if file_type == "TCI" and header_row < 20:
-        header_row = 20
-
-    # ===============================
-    # Gabungkan ulang isi CSV
-    # ===============================
-    data_text = "".join(lines[header_row:])
-
-    # ===============================
-    # Auto-detect delimiter
-    # ===============================
-    try:
-        dialect = csv.Sniffer().sniff(data_text[:2000])
-        sep = dialect.delimiter
-    except Exception:
-        sep = None
-
-    # ===============================
-    # Baca CSV
-    # ===============================
-    df = pd.read_csv(
-        StringIO(data_text),
-        sep=sep,
-        engine="python",
-        on_bad_lines="skip"
-    )
-
-    # ===============================
-    # Bersihkan nama kolom
-    # ===============================
-    df.columns = (
-        df.columns.astype(str)
-        .str.strip()
-        .str.replace("\ufeff", "")
-        .str.replace("\n", " ")
-    )
-
-    # ===============================
-    # Deteksi kolom Frequency
-    # ===============================
+    # ======================================================
+    # 3. DETEKSI KOLOM FREKUENSI
+    # ======================================================
     freq_col = None
     freq_unit = "Hz"
 
@@ -159,11 +184,11 @@ def load_csv_spectrum(filepath, file_type):
             break
 
     if freq_col is None:
-        raise ValueError(f"Kolom Frequency tidak ditemukan: {list(df.columns)}")
+        raise ValueError("Kolom Frequency tidak ditemukan")
 
-    # ===============================
-    # Deteksi kolom Level
-    # ===============================
+    # ======================================================
+    # 4. DETEKSI KOLOM LEVEL
+    # ======================================================
     level_col = None
     for c in df.columns:
         cl = c.lower()
@@ -172,46 +197,39 @@ def load_csv_spectrum(filepath, file_type):
             break
 
     if level_col is None:
-        raise ValueError(f"Kolom Level tidak ditemukan: {list(df.columns)}")
+        raise ValueError("Kolom Level / Field Strength tidak ditemukan")
 
-    # ===============================
-    # Konversi numeric aman
-    # ===============================
-    freq = (
+    # ======================================================
+    # 5. BERSIHKAN DATA (ANTI CRASH)
+    # ======================================================
+    df[freq_col] = (
         df[freq_col]
         .astype(str)
         .str.replace(",", ".", regex=False)
         .str.replace(r"[^0-9\.]", "", regex=True)
     )
-    freq = pd.to_numeric(freq, errors="coerce")
+    df[freq_col] = pd.to_numeric(df[freq_col], errors="coerce")
 
-    level = (
+    if freq_unit == "MHz":
+        df[freq_col] = df[freq_col] * 1e6
+
+    df[level_col] = (
         df[level_col]
         .astype(str)
         .str.replace(",", ".", regex=False)
         .str.replace(r"[^0-9\.\-]", "", regex=True)
     )
-    level = pd.to_numeric(level, errors="coerce")
+    df[level_col] = pd.to_numeric(df[level_col], errors="coerce")
 
-    df_clean = pd.DataFrame({
-        "Frequency (Hz)": freq,
-        "Level (dBµV/m)": level
-    }).dropna()
+    df = df.dropna(subset=[freq_col, level_col])
 
-    # ===============================
-    # Konversi MHz → Hz
-    # ===============================
-    if freq_unit == "MHz":
-        df_clean["Frequency (Hz)"] *= 1e6
+    # ======================================================
+    # 6. OUTPUT FINAL
+    # ======================================================
+    df_final = df[[freq_col, level_col]].copy()
+    df_final.columns = ["Frequency (Hz)", "Level (dBµV/m)"]
 
-    if df_clean.empty:
-        raise ValueError("Data kosong setelah parsing")
-
-    return df_clean
-
-
-
-
+    return df_final
 
 def plot_spectrum_per_band(df):
     plot_urls = []
@@ -234,6 +252,10 @@ def plot_spectrum_per_band(df):
         plt.xlabel("Frequency (MHz)")
         plt.ylabel("Level (dBµV/m)")
         plt.title(f"Spectrum {band}")
+
+        # 🔒 FIXED SCALE (INI SAJA YANG DITAMBAHKAN)
+        plt.ylim(0, 100)
+
         plt.grid(True)
 
         safe_band = band.replace("–", "-").replace(" ", "")
@@ -246,6 +268,7 @@ def plot_spectrum_per_band(df):
         plot_urls.append(f"/static/{filename}")
 
     return plot_urls
+
 
 @app.route("/plotting", methods=["GET", "POST"])
 def Plotting():
