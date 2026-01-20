@@ -281,7 +281,7 @@ def plot_spectrum_per_band(df):
         plt.title(f"Spectrum {band}")
 
         # 🔒 FIXED SCALE (INI SAJA YANG DITAMBAHKAN)
-        plt.ylim(0, 100)
+        #plt.ylim(0, 100)
 
         plt.grid(True)
 
@@ -2994,3 +2994,4 @@ def int_to_rupiah(x):
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
+
