@@ -59,9 +59,30 @@ STATIC_FOLDER = "static"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(STATIC_FOLDER, exist_ok=True)
 
-# =====================================================
-# FREQUENCY RANGES (Hz)
-# =====================================================
+import matplotlib
+matplotlib.use("Agg")
+
+import os
+import pandas as pd
+import matplotlib.pyplot as plt
+from flask import Flask, request, render_template_string, redirect, url_for
+
+# ======================================================
+# CONFIG
+# ======================================================
+UPLOAD_FOLDER = "uploads"
+STATIC_FOLDER = "static"
+
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(STATIC_FOLDER, exist_ok=True)
+
+
+CURRENT_SPECTRUM = None
+CURRENT_REKAP = None
+
+# ======================================================
+# FREQUENCY RANGES
+# ======================================================
 FREQ_RANGES = {
     "87–108 MHz": (87e6, 108e6),
     "108–137 MHz": (108e6, 137e6),
@@ -72,17 +93,440 @@ FREQ_RANGES = {
     "460–470 MHz": (460e6, 470e6),
     "478–806 MHz": (478e6, 806e6),
     "806–880 MHz": (806e6, 880e6),
-    
     "925–960 MHz": (925e6, 960e6),
     "1427–1518 MHz": (1427e6, 1518e6),
     "1805–1880 MHz": (1805e6, 1880e6),
-    "2110–2170 MHz": (2110e6, 2170e6),
-    "2170–2200 MHz": (2170e6, 2200e6),
-    "2300–2400 MHz": (2300e6, 2400e6),
 }
 
+# ======================================================
+# LOAD & CLEAN REKAP (FROM UPLOAD)
+# ======================================================
+def load_rekap(path):
+    df = pd.read_csv(path)
+    df.columns = df.columns.str.strip()
+
+    df["Frekuensi"] = (
+        df["Frekuensi"]
+        .astype(str)
+        .str.replace(",", ".", regex=False)
+        .str.replace(r"[^0-9\.]", "", regex=True)
+    )
+
+    df["Frekuensi (Hz)"] = pd.to_numeric(df["Frekuensi"], errors="coerce") * 1e6
+    df = df.dropna(subset=["Frekuensi (Hz)"])
+    df = df.sort_values("Frekuensi (Hz)")
+    df = df.drop_duplicates(subset=["Frekuensi (Hz)"])
+
+    df.to_csv("rekap_baru.csv", index=False)
+    return df
+
+# ======================================================
+# LOAD SPECTRUM
+# ======================================================
+from io import StringIO
 import pandas as pd
-import io
+import re
+
+def load_spectrum(filepath):
+    # ============================
+    # 1. Baca file mentah
+    # ============================
+    with open(filepath, "r", encoding="latin1", errors="ignore") as f:
+        lines = f.readlines()
+
+    if not lines:
+        raise ValueError("File spectrum kosong")
+
+    # ============================
+    # 2. Deteksi delimiter (sep=)
+    # ============================
+    sep = ","
+    start_row = 0
+
+    if lines[0].lower().startswith("sep="):
+        sep = lines[0].strip().split("=", 1)[1]
+        start_row = 1
+
+    # ============================
+    # 3. Cari baris header dinamis
+    # ============================
+    header_row = None
+    for i in range(start_row, len(lines)):
+        line = lines[i].lower()
+        # ============================
+        # 3. Cari baris header dinamis (TCI + LS Telcom)
+        # ============================
+        header_row = None
+        
+        for i in range(start_row, len(lines)):
+            line = lines[i].lower()
+        
+            # TCI style (Frequency & Level satu baris)
+            if "freq" in line and ("level" in line or "field" in line or "strength" in line):
+                header_row = i
+                break
+        
+            # LS Telcom style (Frequency saja cukup)
+            if re.search(r"freq(uency)?\s*\[", line):
+                header_row = i
+                break
+        
+        if header_row is None:
+            raise ValueError("Header spectrum (Frequency) tidak ditemukan")
+
+            break
+
+    if header_row is None:
+        raise ValueError("Header spectrum (Frequency/Level) tidak ditemukan")
+
+    # ============================
+    # 4. Gabungkan data mulai header
+    # ============================
+    data_text = "".join(lines[header_row:])
+    
+    # Deteksi delimiter dari baris header
+    header_line = lines[header_row]
+    
+    if ";" in header_line:
+        sep = ";"
+    elif "\t" in header_line:
+        sep = "\t"
+
+
+    df = pd.read_csv(
+        StringIO(data_text),
+        sep=sep,
+        engine="python",
+        on_bad_lines="skip"
+    )
+
+    df.columns = df.columns.astype(str).str.strip()
+
+    # ============================
+    # 5. Deteksi kolom Frequency
+    # ============================
+    freq_cols = [
+        c for c in df.columns
+        if re.search(r"freq|frequency", c, re.I)
+    ]
+    if not freq_cols:
+        raise ValueError(f"Kolom Frequency tidak ditemukan. Kolom: {list(df.columns)}")
+    fcol = freq_cols[0]
+
+    # ============================
+    # 6. Deteksi kolom Level
+    # ============================
+    level_cols = [
+        c for c in df.columns
+        if re.search(r"level|field|strength|amplitude", c, re.I)
+    ]
+    if not level_cols:
+        raise ValueError(f"Kolom Level tidak ditemukan. Kolom: {list(df.columns)}")
+    lcol = level_cols[0]
+
+    # ============================
+    # 7. Parsing numerik aman
+    # ============================
+    freq = (
+        df[fcol]
+        .astype(str)
+        .str.replace(",", ".", regex=False)
+        .str.replace(r"[^0-9\.]", "", regex=True)
+    )
+    freq = pd.to_numeric(freq, errors="coerce")
+
+    level = (
+        df[lcol]
+        .astype(str)
+        .str.replace(",", ".", regex=False)
+        .str.replace(r"[^0-9\.\-]", "", regex=True)
+    )
+    level = pd.to_numeric(level, errors="coerce")
+
+    if "mhz" in fcol.lower():
+        freq *= 1e6
+
+    df_clean = pd.DataFrame({
+        "Frequency (Hz)": freq,
+        "Level (dBµV/m)": level
+    }).dropna()
+
+    if df_clean.empty:
+        raise ValueError("Data spectrum kosong setelah parsing")
+
+    return df_clean
+
+
+
+# ======================================================
+# PLOT PER BAND
+# ======================================================
+def plot_band(df_spec, df_marker, band):
+    fmin, fmax = FREQ_RANGES[band]
+
+    d = df_spec[(df_spec["Frequency (Hz)"] >= fmin) &
+                (df_spec["Frequency (Hz)"] <= fmax)]
+
+    r = df_marker[(df_marker["Frekuensi (Hz)"] >= fmin) &
+                  (df_marker["Frekuensi (Hz)"] <= fmax)]
+
+    plt.figure(figsize=(10, 4))
+    plt.plot(d["Frequency (Hz)"]/1e6, d["Level (dBµV/m)"], linewidth=1.2)
+
+    for _, row in r.iterrows():
+        plt.axvline(
+            row["Frekuensi (Hz)"]/1e6,
+            color="darkred",
+            linestyle="--",
+            linewidth=0.6
+        )
+
+    plt.title(f"Spectrum {band}")
+    plt.xlabel("Frequency (MHz)")
+    plt.ylabel("Level (dBµV/m)")
+    plt.grid(True)
+
+    fname = f"spectrum_{band.replace('–','-').replace(' ','')}.png"
+    plt.savefig(os.path.join(STATIC_FOLDER, fname),
+                dpi=300, bbox_inches="tight")
+    plt.close()
+
+    return fname
+
+# ======================================================
+# RENDER PAGE
+# ======================================================
+def render_page():
+    plots = []
+    df_spec = load_spectrum(CURRENT_SPECTRUM)
+    df_rekap = pd.read_csv("rekap_baru.csv")
+
+    for band, (fmin, fmax) in FREQ_RANGES.items():
+        df_band = df_rekap[
+            (df_rekap["Frekuensi (Hz)"] >= fmin) &
+            (df_rekap["Frekuensi (Hz)"] <= fmax)
+        ]
+
+        if df_band.empty:
+            continue
+
+        cols = df_band.columns[5:16]
+        table_df = df_band[list(cols) + ["Frekuensi (Hz)"]]
+
+        img = plot_band(df_spec, df_rekap, band)
+
+        plots.append({
+            "band": band,
+            "img": img,
+            "table": table_df.to_dict("records")
+        })
+
+    return render_template_string(TEMPLATE, plots=plots)
+
+# ======================================================
+# ROUTES
+# ======================================================
+@app.route("/identifikasi", methods=["GET", "POST"])
+def identifikasi():
+    global CURRENT_SPECTRUM, CURRENT_REKAP
+
+    if request.method == "POST":
+        spectrum = request.files["spectrum"]
+        rekap = request.files["rekap"]
+
+        sp_path = os.path.join(UPLOAD_FOLDER, spectrum.filename)
+        rk_path = os.path.join(UPLOAD_FOLDER, rekap.filename)
+
+        spectrum.save(sp_path)
+        rekap.save(rk_path)
+
+        CURRENT_SPECTRUM = sp_path
+        CURRENT_REKAP = rk_path
+
+        load_rekap(CURRENT_REKAP)
+
+        return redirect(url_for("dashboard"))
+
+    return render_template_string(UPLOAD_PAGE)
+
+@app.route("/dashboard")
+def dashboard():
+    return render_page()
+
+@app.route("/delete/<float:freq_hz>")
+def delete_row(freq_hz):
+    df = pd.read_csv("rekap_baru.csv")
+    df = df[df["Frekuensi (Hz)"] != freq_hz]
+    df.to_csv("rekap_baru.csv", index=False)
+    return redirect(url_for("dashboard"))
+
+@app.route("/add", methods=["POST"])
+def add_row():
+    fmhz = request.form.get("freq")
+    if not fmhz:
+        return redirect(url_for("dashboard"))
+
+    df = pd.read_csv("rekap_baru.csv")
+
+    hz = float(fmhz) * 1e6
+    if hz in df["Frekuensi (Hz)"].values:
+        return redirect(url_for("dashboard"))
+
+    new = {c: "" for c in df.columns}
+    new["Frekuensi"] = fmhz
+    new["Frekuensi (Hz)"] = hz
+
+    df = pd.concat([df, pd.DataFrame([new])], ignore_index=True)
+    df = df.sort_values("Frekuensi (Hz)")
+    df.to_csv("rekap_baru.csv", index=False)
+
+    return redirect(url_for("dashboard"))
+
+# ======================================================
+# HTML
+# ======================================================
+UPLOAD_PAGE = """
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Identifikasi Spectrum</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #f4f6f9;
+            margin: 0;
+            padding: 40px;
+        }
+        .container {
+            max-width: 900px;
+            margin: auto;
+        }
+        .card {
+            background: white;
+            padding: 25px;
+            border-radius: 10px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.08);
+        }
+        .upload-box {
+            border: 2px dashed #e1ae05;
+            padding: 25px;
+            border-radius: 10px;
+            text-align: center;
+            background: #fffbea;
+        }
+        select, input[type=file] {
+            width: 100%;
+            padding: 8px;
+            margin-top: 10px;
+        }
+        button {
+            margin-top: 20px;
+            background: #e1ae05;
+            color: white;
+            border: none;
+            padding: 10px 25px;
+            font-size: 16px;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+        button:hover {
+            background: #c89604;
+        }
+    </style>
+</head>
+
+<body>
+<div class="container">
+    <div class="card">
+        <h2>🔍 Identifikasi Spectrum</h2>
+        <p>Upload data hasil pengukuran untuk proses identifikasi.</p>
+
+        <div class="upload-box">
+            <form method="post" enctype="multipart/form-data">
+
+                <label><b>Jenis File Pengukuran</b></label>
+                <select name="file_type" required>
+                    <option value="">-- Pilih Jenis File --</option>
+                    <option value="ARGUS">ARGUS</option>
+                    <option value="ARGUS V6">ARGUS V6</option>
+                    <option value="LS TELCOM">LS TELCOM</option>
+                    <option value="TCI">TCI</option>
+                </select>
+
+                <label style="margin-top:15px; display:block;">
+                    <b>File Spectrum CSV</b>
+                </label>
+                <input type="file" name="spectrum" accept=".csv" required>
+
+                <label style="margin-top:15px; display:block;">
+                    <b>File Rekap CSV</b>
+                </label>
+                <input type="file" name="rekap" accept=".csv" required>
+
+                <button type="submit">Upload & Identifikasi</button>
+            </form>
+        </div>
+    </div>
+</div>
+</body>
+</html>
+"""
+
+
+TEMPLATE = """
+<!DOCTYPE html>
+<html>
+<head>
+<title>Spectrum Dashboard</title>
+<style>
+body { font-family: Arial; background:#f4f6f9; padding:30px }
+.card { background:white; padding:20px; margin-bottom:50px; border-radius:10px }
+table { border-collapse: collapse; width:100%; margin-top:25px }
+th,td { border:1px solid #999; padding:6px 8px; font-size:12px }
+th { background:#eee }
+.ident { min-width:320px }
+</style>
+</head>
+
+<body>
+<h2>Spectrum Monitoring</h2>
+
+{% for p in plots %}
+<div class="card">
+<img src="/static/{{p.img}}" style="width:100%; margin-bottom:25px">
+
+<table>
+<tr>
+{% for k in p.table[0].keys() if k!="Frekuensi (Hz)" %}
+<th class="{{'ident' if k=='Identifikasi' else ''}}">{{k}}</th>
+{% endfor %}
+<th>Aksi</th>
+</tr>
+
+{% for r in p.table %}
+<tr>
+{% for k,v in r.items() if k!="Frekuensi (Hz)" %}
+<td contenteditable="true">{{v}}</td>
+{% endfor %}
+<td>
+<a href="/delete/{{r['Frekuensi (Hz)']}}">Hapus</a>
+</td>
+</tr>
+{% endfor %}
+</table>
+
+<form method="post" action="/add">
+<input name="freq" placeholder="Frekuensi MHz">
+<button type="submit">+ Tambah Baris</button>
+</form>
+
+</div>
+{% endfor %}
+</body>
+</html>
+"""
+
+
 
 def load_csv_spectrum(filepath, file_type):
     import pandas as pd
@@ -2318,17 +2762,23 @@ def index():
         
             <button form="excel-form" type="submit"
                     style="background:#006db0; color:white; border:none; padding:10px 20px; font-size: 16px; border-radius:6px;">
-                ⬇️ Unduh Rekap
+                Unduh Rekap
             </button>
         
             <button type="button" onclick="openModal()"
                     style="background:#e1ae05; color:white; border:none; padding:10px 20px; font-size: 16px; border-radius:6px;">
-                📄 Unduh Nodin
+                Unduh Nodin
             </button>
         
             <a href="{{ url_for('Plotting') }}"
                    style="color:white; background:#e1ae05; border:none; padding:10px 20px; font-size:16px; border-radius:6px; text-decoration:none;">
                     Plotting
+                </a>
+            </a>
+            
+            <a href="{{ url_for('identifikasi') }}"
+                   style="color:white; background:#e1ae05; border:none; padding:10px 20px; font-size:16px; border-radius:6px; text-decoration:none;">
+                    Identifikasi
                 </a>
             </a>
             
@@ -2994,4 +3444,3 @@ def int_to_rupiah(x):
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
-
