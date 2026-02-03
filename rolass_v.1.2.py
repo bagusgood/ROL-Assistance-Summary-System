@@ -29,8 +29,6 @@ from urllib3.util.retry import Retry
 import plotly.graph_objects as go
 import folium
 from folium.plugins import MarkerCluster
-import urllib3
-import urllib.parse
 import matplotlib.pyplot as plt
 from io import StringIO
 
@@ -63,8 +61,6 @@ import matplotlib
 matplotlib.use("Agg")
 
 import os
-import pandas as pd
-import matplotlib.pyplot as plt
 from flask import Flask, request, render_template_string, redirect, url_for
 
 # ======================================================
@@ -86,8 +82,7 @@ CURRENT_REKAP = None
 FREQ_RANGES = {
     "87–108 MHz": (87e6, 108e6),
     "108–137 MHz": (108e6, 137e6),
-    "137–150 MHz": (137e6, 150e6),
-    "150–174 MHz": (150e6, 174e6),
+    "137–174 MHz": (137e6, 174e6),
     "174–230 MHz": (174e6, 230e6),
     "300–430 MHz": (300e6, 430e6),
     "430–460 MHz": (430e6, 460e6),
@@ -127,23 +122,74 @@ def load_rekap(path):
 # ======================================================
 # LOAD SPECTRUM
 # ======================================================
-from io import StringIO
-import pandas as pd
-import re
+def load_spectrum(filepath, file_type=None):
+    import pandas as pd
+    import re
+    from io import StringIO
 
-def load_spectrum(filepath):
-    # ============================
-    # 1. Baca file mentah
-    # ============================
+    # ==================================================
+    # 1. KHUSUS LS TELCOM (RAW EXPORT)
+    # ==================================================
+    if file_type == "LS TELCOM":
+        try:
+            df = pd.read_csv(
+                filepath,
+                sep=";",
+                skiprows=11,
+                encoding="latin1",
+                engine="python"
+            )
+
+            # Buang 3 kolom metadata awal
+            df = df.iloc[:, 3:]
+
+            if df.empty:
+                raise ValueError("Data LS Telcom kosong setelah buang metadata")
+
+            # Transpose: kolom frekuensi → baris
+            df_t = df.T.reset_index()
+            df_t.rename(columns={"index": "Frequency (Hz)"}, inplace=True)
+
+            # Parsing Frequency
+            df_t["Frequency (Hz)"] = (
+                df_t["Frequency (Hz)"]
+                .astype(str)
+                .str.replace(",", ".", regex=False)
+                .str.replace(r"[^0-9\.]", "", regex=True)
+            )
+            df_t["Frequency (Hz)"] = pd.to_numeric(
+                df_t["Frequency (Hz)"], errors="coerce"
+            )
+
+            # Semua level numerik
+            for col in df_t.columns[1:]:
+                df_t[col] = pd.to_numeric(df_t[col], errors="coerce")
+
+            # Envelope spectrum (MAX)
+            df_t["Level (dBµV/m)"] = df_t.iloc[:, 1:].max(axis=1)
+
+            df_final = df_t[["Frequency (Hz)", "Level (dBµV/m)"]].dropna()
+
+            if df_final.empty:
+                raise ValueError("Data LS Telcom kosong setelah parsing")
+
+            return df_final
+
+        except Exception as e:
+            raise ValueError(f"Gagal membaca LS TELCOM: {e}")
+
+    # ==================================================
+    # 2. GENERIC SPECTRUM (TCI, ARGUS, DLL)
+    # ==================================================
     with open(filepath, "r", encoding="latin1", errors="ignore") as f:
         lines = f.readlines()
 
     if not lines:
         raise ValueError("File spectrum kosong")
 
-    # ============================
-    # 2. Deteksi delimiter (sep=)
-    # ============================
+    # -----------------------------
+    # Deteksi delimiter awal (sep=)
+    # -----------------------------
     sep = ","
     start_row = 0
 
@@ -151,51 +197,79 @@ def load_spectrum(filepath):
         sep = lines[0].strip().split("=", 1)[1]
         start_row = 1
 
-    # ============================
-    # 3. Cari baris header dinamis
-    # ============================
+    # -----------------------------
+    # Cari header Frequency
+    # -----------------------------
     header_row = None
     for i in range(start_row, len(lines)):
         line = lines[i].lower()
-        # ============================
-        # 3. Cari baris header dinamis (TCI + LS Telcom)
-        # ============================
-        header_row = None
-        
-        for i in range(start_row, len(lines)):
-            line = lines[i].lower()
-        
-            # TCI style (Frequency & Level satu baris)
-            if "freq" in line and ("level" in line or "field" in line or "strength" in line):
-                header_row = i
-                break
-        
-            # LS Telcom style (Frequency saja cukup)
-            if re.search(r"freq(uency)?\s*\[", line):
-                header_row = i
-                break
-        
-        if header_row is None:
-            raise ValueError("Header spectrum (Frequency) tidak ditemukan")
 
+        if "freq" in line and (
+            "level" in line or "field" in line or "strength" in line
+        ):
+            header_row = i
+            break
+
+        if re.search(r"freq(uency)?\s*\[", line):
+            header_row = i
             break
 
     if header_row is None:
-        raise ValueError("Header spectrum (Frequency/Level) tidak ditemukan")
+        # =========================================
+        # FALLBACK: COBA LS TELCOM RAW AUTO-DETECT
+        # =========================================
+        try:
+            df = pd.read_csv(
+                filepath,
+                sep=";",
+                skiprows=11,
+                encoding="latin1",
+                engine="python"
+            )
+    
+            # Ciri kuat LS Telcom: kolom frekuensi banyak & numerik
+            if df.shape[1] > 10:
+                df = df.iloc[:, 3:]  # buang metadata
+                df_t = df.T.reset_index()
+                df_t.rename(columns={"index": "Frequency (Hz)"}, inplace=True)
+    
+                df_t["Frequency (Hz)"] = (
+                    df_t["Frequency (Hz)"]
+                    .astype(str)
+                    .str.replace(",", ".", regex=False)
+                    .str.replace(r"[^0-9\.]", "", regex=True)
+                )
+                df_t["Frequency (Hz)"] = pd.to_numeric(
+                    df_t["Frequency (Hz)"], errors="coerce"
+                )
+    
+                for col in df_t.columns[1:]:
+                    df_t[col] = pd.to_numeric(df_t[col], errors="coerce")
+    
+                df_t["Level (dBµV/m)"] = df_t.iloc[:, 1:].max(axis=1)
+    
+                df_final = df_t[["Frequency (Hz)", "Level (dBµV/m)"]].dropna()
+    
+                if not df_final.empty:
+                    return df_final
+    
+        except Exception:
+            pass  # lanjut error asli
+    
+        # Jika semua gagal
+        raise ValueError("Header spectrum (Frequency) tidak ditemukan dan bukan LS TELCOM RAW")
 
-    # ============================
-    # 4. Gabungkan data mulai header
-    # ============================
+
+    # -----------------------------
+    # Gabungkan data dari header
+    # -----------------------------
     data_text = "".join(lines[header_row:])
-    
-    # Deteksi delimiter dari baris header
     header_line = lines[header_row]
-    
+
     if ";" in header_line:
         sep = ";"
     elif "\t" in header_line:
         sep = "\t"
-
 
     df = pd.read_csv(
         StringIO(data_text),
@@ -206,31 +280,31 @@ def load_spectrum(filepath):
 
     df.columns = df.columns.astype(str).str.strip()
 
-    # ============================
-    # 5. Deteksi kolom Frequency
-    # ============================
+    # -----------------------------
+    # Deteksi kolom Frequency
+    # -----------------------------
     freq_cols = [
         c for c in df.columns
         if re.search(r"freq|frequency", c, re.I)
     ]
     if not freq_cols:
-        raise ValueError(f"Kolom Frequency tidak ditemukan. Kolom: {list(df.columns)}")
+        raise ValueError(f"Kolom Frequency tidak ditemukan: {list(df.columns)}")
     fcol = freq_cols[0]
 
-    # ============================
-    # 6. Deteksi kolom Level
-    # ============================
+    # -----------------------------
+    # Deteksi kolom Level
+    # -----------------------------
     level_cols = [
         c for c in df.columns
         if re.search(r"level|field|strength|amplitude", c, re.I)
     ]
     if not level_cols:
-        raise ValueError(f"Kolom Level tidak ditemukan. Kolom: {list(df.columns)}")
+        raise ValueError(f"Kolom Level tidak ditemukan: {list(df.columns)}")
     lcol = level_cols[0]
 
-    # ============================
-    # 7. Parsing numerik aman
-    # ============================
+    # -----------------------------
+    # Parsing numerik aman
+    # -----------------------------
     freq = (
         df[fcol]
         .astype(str)
@@ -350,7 +424,6 @@ def identifikasi():
         load_rekap(CURRENT_REKAP)
 
         return redirect(url_for("dashboard"))
-
     return render_template_string(UPLOAD_PAGE)
 
 @app.route("/dashboard")
@@ -3448,5 +3521,3 @@ def int_to_rupiah(x):
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
-
-
