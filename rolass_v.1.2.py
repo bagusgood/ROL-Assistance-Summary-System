@@ -75,6 +75,7 @@ os.makedirs(STATIC_FOLDER, exist_ok=True)
 
 CURRENT_SPECTRUM = None
 CURRENT_REKAP = None
+CURRENT_FILE_TYPE = None
 
 # ======================================================
 # FREQUENCY RANGES
@@ -104,20 +105,50 @@ def load_rekap(path):
     df = pd.read_csv(path)
     df.columns = df.columns.str.strip()
 
+    # ===== BUANG SEMUA LEVEL LAMA =====
+    for c in df.columns:
+        if "level" in c.lower():
+            df = df.drop(columns=c)
+
+    # ===== NORMALISASI FREKUENSI =====
     df["Frekuensi"] = (
         df["Frekuensi"]
         .astype(str)
         .str.replace(",", ".", regex=False)
         .str.replace(r"[^0-9\.]", "", regex=True)
     )
+    
+    df["Frekuensi"] = pd.to_numeric(df["Frekuensi"], errors="coerce")
+    df = df.dropna(subset=["Frekuensi"])
+    df = df.drop_duplicates(subset=["Frekuensi"])
+    df = df.sort_values("Frekuensi").reset_index(drop=True)
 
-    df["Frekuensi (Hz)"] = pd.to_numeric(df["Frekuensi"], errors="coerce") * 1e6
-    df = df.dropna(subset=["Frekuensi (Hz)"])
-    df = df.sort_values("Frekuensi (Hz)")
-    df = df.drop_duplicates(subset=["Frekuensi (Hz)"])
+    # ===== TAMBAHKAN LEVEL BARU (KOSONG) =====
+    df["Level (dBµV/m)"] = ""
+
+    # ===== REBUILD NO =====
+    df["No"] = range(1, len(df) + 1)
 
     df.to_csv("rekap_baru.csv", index=False)
     return df
+
+
+
+def attach_level_from_spectrum(df_rekap, df_spec):
+    spec_f = df_spec["Frequency (Hz)"].values
+    spec_l = df_spec["Level (dBµV/m)"].values
+
+    levels = []
+
+    for f_mhz in df_rekap["Frekuensi"].astype(float).values:
+        f_hz = f_mhz * 1e6
+        idx = (abs(spec_f - f_hz)).argmin()
+        levels.append(spec_l[idx])
+
+    df_rekap["Level (dBµV/m)"] = levels
+    return df_rekap
+
+
 
 # ======================================================
 # LOAD SPECTRUM
@@ -335,107 +366,209 @@ def load_spectrum(filepath, file_type=None):
     return df_clean
 
 
-
-# ======================================================
-# PLOT PER BAND
-# ======================================================
-def plot_band(df_spec, df_marker, band):
-    fmin, fmax = FREQ_RANGES[band]
-
-    d = df_spec[(df_spec["Frequency (Hz)"] >= fmin) &
-                (df_spec["Frequency (Hz)"] <= fmax)]
-
-    r = df_marker[(df_marker["Frekuensi (Hz)"] >= fmin) &
-                  (df_marker["Frekuensi (Hz)"] <= fmax)]
-
-    plt.figure(figsize=(10, 4))
-    plt.plot(d["Frequency (Hz)"]/1e6, d["Level (dBµV/m)"], linewidth=1.2)
-
-    for _, row in r.iterrows():
-        plt.axvline(
-            row["Frekuensi (Hz)"]/1e6,
-            color="darkred",
-            linestyle="--",
-            linewidth=0.6
-        )
-
-    plt.title(f"Spectrum {band}")
-    plt.xlabel("Frequency (MHz)")
-    plt.ylabel("Level (dBµV/m)")
-    plt.grid(True)
-
-    fname = f"spectrum_{band.replace('–','-').replace(' ','')}.png"
-    plt.savefig(os.path.join(STATIC_FOLDER, fname),
-                dpi=300, bbox_inches="tight")
-    plt.close()
-
-    return fname
-
-# ======================================================
-# RENDER PAGE
-# ======================================================
 def render_page():
     plots = []
-    df_spec = load_spectrum(CURRENT_SPECTRUM)
+
+    DISPLAY_COLS = [
+        "No",
+        "Band",
+        "Pita Frekuensi",
+        "Frekuensi",
+        "Dinas",
+        "Sub Service",
+        "Kelas Emisi",
+        "Identifikasi",
+        "Legalitas",
+        "Level (dBµV/m)"
+    ]
+
+    df_spec = load_spectrum(CURRENT_SPECTRUM, CURRENT_FILE_TYPE)
     df_rekap = pd.read_csv("rekap_baru.csv")
 
+    # ===============================
+    # BUILD LEVEL FROM SPECTRUM
+    # ===============================
+    df_rekap = attach_level_from_spectrum(df_rekap, df_spec)
+
+    # ===============================
+    # SORT & REBUILD NO (HZ BASED)
+    # ===============================
+    df_rekap = df_rekap.sort_values("Frekuensi").reset_index(drop=True)
+    df_rekap["No"] = range(1, len(df_rekap) + 1)
+    df_rekap.to_csv("rekap_baru.csv", index=False)
+    
     for band, (fmin, fmax) in FREQ_RANGES.items():
-        df_band = df_rekap[
-            (df_rekap["Frekuensi (Hz)"] >= fmin) &
-            (df_rekap["Frekuensi (Hz)"] <= fmax)
+    
+        df_spec_band = df_spec[
+            (df_spec["Frequency (Hz)"] >= fmin) &
+            (df_spec["Frequency (Hz)"] <= fmax)
         ]
-
-        if df_band.empty:
+        if df_spec_band.empty:
             continue
-
-        cols = df_band.columns[5:16]
-        table_df = df_band[list(cols) + ["Frekuensi (Hz)"]]
-
-        img = plot_band(df_spec, df_rekap, band)
-
+    
+        df_rekap_band = df_rekap[
+            (df_rekap["Frekuensi"] * 1e6 >= fmin) &
+            (df_rekap["Frekuensi"] * 1e6 <= fmax)
+        ].copy()
+    
+        if df_rekap_band.empty:
+            continue
+    
+        df_rekap_band["Band"] = band
+        df_rekap_band["Pita Frekuensi"] = f"{fmin/1e6:.0f}–{fmax/1e6:.0f} MHz"
+        df_rekap_band["_freq_key"] = df_rekap_band["Frekuensi"]
+    
+        table_df = df_rekap_band[DISPLAY_COLS ]
+    
         plots.append({
             "band": band,
-            "img": img,
+            "freq": (df_spec_band["Frequency (Hz)"] / 1e6).tolist(),
+            "level": df_spec_band["Level (dBµV/m)"].tolist(),
+            "marker_freq": df_rekap_band["Frekuensi"].tolist(),
+            "marker_level": df_rekap_band["Level (dBµV/m)"].tolist(),
+            "marker_no": df_rekap_band["No"].tolist(),
             "table": table_df.to_dict("records")
         })
 
+
+
     return render_template_string(TEMPLATE, plots=plots)
+
+
+
+
 
 # ======================================================
 # ROUTES
 # ======================================================
 @app.route("/identifikasi", methods=["GET", "POST"])
 def identifikasi():
-    global CURRENT_SPECTRUM, CURRENT_REKAP
+    global CURRENT_SPECTRUM, CURRENT_FILE_TYPE
 
-    if request.method == "POST":
-        spectrum = request.files["spectrum"]
-        rekap = request.files["rekap"]
+    # ===============================
+    # GET → tampilkan halaman upload
+    # ===============================
+    if request.method == "GET":
+        df = pd.read_csv("rekap_2025.csv")
 
-        sp_path = os.path.join(UPLOAD_FOLDER, spectrum.filename)
-        rk_path = os.path.join(UPLOAD_FOLDER, rekap.filename)
+        catatan_list = (
+            df["Catatan"]
+            .dropna()
+            .astype(str)
+            .unique()
+            .tolist()
+        )
 
-        spectrum.save(sp_path)
-        rekap.save(rk_path)
+        return render_template_string(
+            UPLOAD_PAGE,
+            catatan=sorted(catatan_list)
+        )
 
-        CURRENT_SPECTRUM = sp_path
-        CURRENT_REKAP = rk_path
+    # ===============================
+    # POST → proses identifikasi
+    # ===============================
+    spectrum = request.files["spectrum"]
+    CURRENT_FILE_TYPE = request.form.get("file_type")
 
-        load_rekap(CURRENT_REKAP)
+    # simpan spectrum
+    sp_path = os.path.join(UPLOAD_FOLDER, spectrum.filename)
+    spectrum.save(sp_path)
+    CURRENT_SPECTRUM = sp_path
 
-        return redirect(url_for("dashboard"))
-    return render_template_string(UPLOAD_PAGE)
+    # ===============================
+    # LOAD & FILTER REKAP
+    # ===============================
+    df_rekap = pd.read_csv("rekap_2025.csv")
+
+    catatan = request.form.get("catatan")
+
+    if catatan:
+        df_rekap = df_rekap[df_rekap["Catatan"] == catatan]
+
+    # ===============================
+    # SIMPAN SEBAGAI REKAP AKTIF
+    # ===============================
+    df_rekap.to_csv("rekap_baru.csv", index=False)
+
+    # ===============================
+    # LANJUT KE DASHBOARD
+    # ===============================
+    return redirect(url_for("dashboard"))
+
+
+
+
 
 @app.route("/dashboard")
 def dashboard():
     return render_page()
 
-@app.route("/delete/<float:freq_hz>")
-def delete_row(freq_hz):
+@app.route("/delete/<int:no>")
+def delete_row(no):
     df = pd.read_csv("rekap_baru.csv")
-    df = df[df["Frekuensi (Hz)"] != freq_hz]
+
+    df = df[df["No"] != no]
+
+    df = df.sort_values("Frekuensi").reset_index(drop=True)
+    df["No"] = range(1, len(df) + 1)
+
     df.to_csv("rekap_baru.csv", index=False)
     return redirect(url_for("dashboard"))
+
+@app.route("/add_click", methods=["POST"])
+def add_click():
+    data = request.get_json()
+
+    freq = round(float(data["freq"]), 6)   # MHz
+    level = float(data["level"])
+    ident = data.get("identifikasi", "")
+
+    df = pd.read_csv("rekap_baru.csv")
+
+    # pastikan numeric
+    df["Frekuensi"] = pd.to_numeric(df["Frekuensi"], errors="coerce")
+
+    # ===============================
+    # UPDATE JIKA FREKUENSI ADA
+    # ===============================
+    tol = 1e-6
+    mask = abs(df["Frekuensi"] - freq) < tol
+
+    if mask.any():
+        idx = df[mask].index[0]
+        df.loc[idx, "Level (dBµV/m)"] = level
+        if "Identifikasi" in df.columns:
+            df.loc[idx, "Identifikasi"] = ident
+
+    # ===============================
+    # INSERT JIKA BELUM ADA
+    # ===============================
+    else:
+        ref = df[df["Frekuensi"] < freq].iloc[-1] if (df["Frekuensi"] < freq).any() else None
+
+        new = {}
+        for c in df.columns:
+            if c == "No":
+                continue
+            elif c == "Frekuensi":
+                new[c] = freq
+            elif c == "Level (dBµV/m)":
+                new[c] = level
+            elif c.lower().startswith("identifikasi"):
+                new[c] = ident
+            else:
+                new[c] = ref[c] if ref is not None else ""
+
+        df = pd.concat([df, pd.DataFrame([new])], ignore_index=True)
+
+    # ===============================
+    # REBUILD NO
+    # ===============================
+    df = df.sort_values("Frekuensi").reset_index(drop=True)
+    df["No"] = range(1, len(df) + 1)
+
+    df.to_csv("rekap_baru.csv", index=False)
+    return "", 204
 
 @app.route("/add", methods=["POST"])
 def add_row():
@@ -459,6 +592,36 @@ def add_row():
 
     return redirect(url_for("dashboard"))
 
+@app.route("/add_popup", methods=["POST"])
+def add_popup():
+    data = request.get_json()
+    df = pd.read_csv("rekap_baru.csv")
+
+    hz = float(data["Frekuensi (Hz)"])
+
+    if hz in df["Frekuensi (Hz)"].values:
+        return {"status": "exists"}, 200
+
+    new = {}
+    for col in df.columns:
+        if col == "No":
+            continue
+        elif col == "Frekuensi (Hz)":
+            new[col] = hz
+        elif col == "Level (dBµV/m)":
+            new[col] = float(data.get("Level (dBµV/m)", ""))
+        else:
+            new[col] = data.get(col, "")
+
+    df = pd.concat([df, pd.DataFrame([new])], ignore_index=True)
+    df = df.sort_values("Frekuensi (Hz)").reset_index(drop=True)
+    df["No"] = range(1, len(df)+1)
+
+    df.to_csv("rekap_baru.csv", index=False)
+    return {"status": "ok"}, 200
+
+
+
 # ======================================================
 # HTML
 # ======================================================
@@ -466,84 +629,118 @@ UPLOAD_PAGE = """
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Identifikasi Spectrum</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            background: #f4f6f9;
-            margin: 0;
-            padding: 40px;
-        }
-        .container {
-            max-width: 900px;
-            margin: auto;
-        }
-        .card {
-            background: white;
-            padding: 25px;
-            border-radius: 10px;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.08);
-        }
-        .upload-box {
-            border: 2px dashed #e1ae05;
-            padding: 25px;
-            border-radius: 10px;
-            text-align: center;
-            background: #fffbea;
-        }
-        select, input[type=file] {
-            width: 100%;
-            padding: 8px;
-            margin-top: 10px;
-        }
-        button {
-            margin-top: 20px;
-            background: #e1ae05;
-            color: white;
-            border: none;
-            padding: 10px 25px;
-            font-size: 16px;
-            border-radius: 6px;
-            cursor: pointer;
-        }
-        button:hover {
-            background: #c89604;
-        }
-    </style>
+<title>Identifikasi Spectrum</title>
+
+<style>
+body {
+    font-family: "Segoe UI", Arial, sans-serif;
+    background:#f4f6f9;
+    padding:40px;
+}
+
+.container {
+    max-width:900px;
+    margin:auto;
+}
+
+.card {
+    background:white;
+    padding:28px;
+    border-radius:14px;
+    box-shadow:0 8px 20px rgba(0,0,0,0.08);
+}
+
+h2 {
+    margin-top:0;
+    color:#1f4fd8;
+}
+
+.section {
+    margin-top:30px;
+    padding-top:20px;
+    border-top:1px solid #ddd;
+}
+
+label {
+    font-weight:600;
+    display:block;
+    margin-top:14px;
+}
+
+select, input[type=file] {
+    width:100%;
+    padding:9px;
+    margin-top:6px;
+    border-radius:8px;
+    border:1px solid #ccc;
+}
+
+button {
+    margin-top:30px;
+    background:#1f4fd8;
+    color:white;
+    border:none;
+    padding:12px 30px;
+    font-size:16px;
+    border-radius:10px;
+    cursor:pointer;
+}
+
+button:hover {
+    background:#183fb0;
+}
+
+.note {
+    font-size:13px;
+    color:#666;
+    margin-top:6px;
+}
+</style>
 </head>
 
 <body>
 <div class="container">
-    <div class="card">
-        <h2>🔍 Identifikasi Spectrum</h2>
-        <p>Upload data hasil pengukuran untuk proses identifikasi.</p>
+<div class="card">
 
-        <div class="upload-box">
-            <form method="post" enctype="multipart/form-data">
+<h2>🔍 Identifikasi Spectrum</h2>
+<p>Upload data pengukuran dan tentukan referensi rekap identifikasi.</p>
 
-                <label><b>Jenis File Pengukuran</b></label>
-                <select name="file_type" required>
-                    <option value="">-- Pilih Jenis File --</option>
-                    <option value="ARGUS">ARGUS</option>
-                    <option value="ARGUS V6">ARGUS V6</option>
-                    <option value="LS TELCOM">LS TELCOM</option>
-                    <option value="TCI">TCI</option>
-                </select>
+<form method="post" enctype="multipart/form-data">
 
-                <label style="margin-top:15px; display:block;">
-                    <b>File Spectrum CSV</b>
-                </label>
-                <input type="file" name="spectrum" accept=".csv" required>
+<!-- ================== FILE PENGUKURAN ================== -->
+<label>Jenis File Pengukuran</label>
+<select name="file_type" required>
+    <option value="">-- Pilih Jenis File --</option>
+    <option value="ARGUS">ARGUS</option>
+    <option value="ARGUS V6">ARGUS V6</option>
+    <option value="LS TELCOM">LS TELCOM</option>
+    <option value="TCI">TCI</option>
+</select>
 
-                <label style="margin-top:15px; display:block;">
-                    <b>File Rekap CSV</b>
-                </label>
-                <input type="file" name="rekap" accept=".csv" required>
+<label>File Spectrum CSV</label>
+<input type="file" name="spectrum" accept=".csv" required>
 
-                <button type="submit">Upload & Identifikasi</button>
-            </form>
-        </div>
-    </div>
+<!-- ================== REFERENSI ================== -->
+<div class="section">
+<h3>📌 Tentukan Referensi</h3>
+<p class="note">
+Data diambil langsung dari <b>rekap_2025.csv</b>.  
+Pilih filter untuk menentukan data referensi identifikasi.
+</p>
+
+<label>Catatan</label>
+<select name="catatan">
+    <option value="">-- Semua Catatan --</option>
+    {% for v in catatan %}
+    <option value="{{ v }}">{{ v }}</option>
+    {% endfor %}
+</select>
+</div>
+
+<button type="submit">Proses Identifikasi</button>
+
+</form>
+</div>
 </div>
 </body>
 </html>
@@ -555,14 +752,149 @@ TEMPLATE = """
 <html>
 <head>
 <title>Spectrum Dashboard</title>
+<script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
 <style>
-body { font-family: Arial; background:#f4f6f9; padding:30px }
-.card { background:white; padding:20px; margin-bottom:50px; border-radius:10px }
-table { border-collapse: collapse; width:100%; margin-top:25px }
-th,td { border:1px solid #999; padding:6px 8px; font-size:12px }
-th { background:#eee }
-.ident { min-width:320px }
+:root{
+    --primary:#1f4fd8;
+    --danger:#d9534f;
+    --bg:#f4f6f9;
+    --card:#ffffff;
+    --border:#dcdcdc;
+}
+
+body {
+    font-family: "Segoe UI", Arial, sans-serif;
+    background: var(--bg);
+    padding: 30px;
+    color:#333;
+}
+
+h2 {
+    margin-bottom: 30px;
+    color:#1a1a1a;
+}
+
+.card {
+    background: var(--card);
+    padding: 22px;
+    margin-bottom: 40px;
+    border-radius: 14px;
+    box-shadow: 0 8px 20px rgba(0,0,0,0.08);
+}
+
+.card h3 {
+    margin-top: 0;
+    color: var(--primary);
+}
+
+/* ================= TABLE ================= */
+table {
+    border-collapse: collapse;
+    width:100%;
+    margin-top:20px;
+    font-size:13px;
+}
+
+th {
+    background:#eef2f7;
+    padding:10px 8px;
+    border:1px solid var(--border);
+    font-weight:600;
+}
+
+td {
+    border:1px solid var(--border);
+    padding:8px 6px;
+    text-align:center;
+}
+
+tr:nth-child(even) {
+    background:#fafafa;
+}
+
+td[contenteditable="true"] {
+    background:#fffef5;
+    cursor:text;
+}
+
+td[contenteditable="true"]:focus {
+    outline:none;
+    background:#fff8dc;
+    box-shadow: inset 0 0 0 1px var(--primary);
+}
+
+/* ================= BUTTON ================= */
+a.btn-delete {
+    color: white;
+    background: var(--danger);
+    padding:4px 10px;
+    border-radius:6px;
+    text-decoration:none;
+    font-size:12px;
+}
+
+a.btn-delete:hover {
+    opacity:0.85;
+}
+
+/* ================= MODAL ================= */
+.modal {
+    display:none;
+    position:fixed;
+    inset:0;
+    background:rgba(0,0,0,0.45);
+    z-index:1000;
+}
+
+.modal-content {
+    background:white;
+    width:380px;
+    margin:120px auto;
+    padding:22px;
+    border-radius:14px;
+    box-shadow:0 12px 30px rgba(0,0,0,0.25);
+}
+
+.modal-content h4 {
+    margin-top:0;
+    color:var(--primary);
+}
+
+.modal-content label {
+    display:block;
+    margin-top:12px;
+    font-size:13px;
+    font-weight:600;
+}
+
+.modal-content input {
+    width:100%;
+    padding:8px;
+    margin-top:5px;
+    border-radius:6px;
+    border:1px solid var(--border);
+}
+
+.modal-content button {
+    margin-top:18px;
+    padding:8px 16px;
+    border:none;
+    border-radius:8px;
+    cursor:pointer;
+    font-size:14px;
+}
+
+.modal-content button:first-of-type {
+    background:var(--primary);
+    color:white;
+}
+
+.modal-content button:last-of-type {
+    background:#ccc;
+    margin-left:8px;
+}
 </style>
+
 </head>
 
 <body>
@@ -570,39 +902,137 @@ th { background:#eee }
 
 {% for p in plots %}
 <div class="card">
-<img src="/static/{{p.img}}" style="width:100%; margin-bottom:25px">
+
+<h3>{{ p.band }}</h3>
+<div id="plot-{{ loop.index }}" style="height:360px;"></div>
 
 <table>
 <tr>
-{% for k in p.table[0].keys() if k!="Frekuensi (Hz)" %}
-<th class="{{'ident' if k=='Identifikasi' else ''}}">{{k}}</th>
+{% for k in p.table[0].keys() %}
+<th>{{ k }}</th>
 {% endfor %}
 <th>Aksi</th>
 </tr>
 
 {% for r in p.table %}
 <tr>
-{% for k,v in r.items() if k!="Frekuensi (Hz)" %}
-<td contenteditable="true">{{v}}</td>
+{% for k,v in r.items() %}
+<td contenteditable="true"
+    onblur="saveCell('{{ r['No'] }}','{{ k }}',this.innerText)">
+    {{ v }}
+</td>
+
 {% endfor %}
 <td>
-<a href="/delete/{{r['Frekuensi (Hz)']}}">Hapus</a>
+<a class="btn-delete"
+   href="/delete/{{ r['No'] }}"
+   onclick="return confirm('Hapus data ini?')">
+   Hapus
+</a>
+
 </td>
 </tr>
 {% endfor %}
 </table>
 
-<form method="post" action="/add">
-<input name="freq" placeholder="Frekuensi MHz">
-<button type="submit">+ Tambah Baris</button>
-</form>
+
+<!-- POPUP -->
+<div id="modal-{{ loop.index }}" class="modal">
+<div class="modal-content">
+<h4>Tambah Data</h4>
+
+<label>Identifikasi</label>
+<input id="ident-{{ loop.index }}">
+
+<label>Frekuensi (MHz)</label>
+<input id="freq-{{ loop.index }}" readonly>
+
+<label>Level (dBµV/m)</label>
+<input id="level-{{ loop.index }}" readonly>
+
+<button onclick="submit{{ loop.index }}()">Simpan</button>
+<button onclick="close{{ loop.index }}()">Batal</button>
+</div>
+</div>
+
+<script>
+(function(){
+var freq = {{ p.freq }};
+var level = {{ p.level }};
+var mFreq = {{ p.marker_freq }};
+var mNo = {{ p.marker_no }};
+
+function nearestY(f){
+    let d=Infinity, idx=0;
+    for(let i=0;i<freq.length;i++){
+        let x=Math.abs(freq[i]-f);
+        if(x<d){ d=x; idx=i; }
+    }
+    return level[idx];
+}
+
+var spectrum = { x:freq, y:level, mode:'lines', name:'Spectrum' };
+
+var my = mFreq.map(nearestY);
+
+var mc = {
+    x:mFreq, y:my, mode:'markers',
+    marker:{ size:12, symbol:'circle-open', line:{width:2,color:'red'} }
+};
+
+var mt = {
+    x:mFreq, y:my, mode:'text',
+    text:mNo, textposition:'top center'
+};
+
+Plotly.newPlot('plot-{{ loop.index }}',[spectrum,mc,mt]);
+
+document.getElementById('plot-{{ loop.index }}')
+.on('plotly_click', function(d){
+    let fx = d.points[0].x;
+
+    // Cari indeks frekuensi spectrum terdekat
+    let min = Infinity, idx = 0;
+    for(let i=0;i<freq.length;i++){
+        let dx = Math.abs(freq[i] - fx);
+        if(dx < min){
+            min = dx;
+            idx = i;
+        }
+    }
+
+    let f = freq[idx];
+    let y = level[idx];
+
+    document.getElementById('freq-{{ loop.index }}').value = f.toFixed(6);
+    document.getElementById('level-{{ loop.index }}').value = y.toFixed(2);
+    document.getElementById('modal-{{ loop.index }}').style.display='block';
+});
+
+
+window.close{{ loop.index }} = ()=> {
+    document.getElementById('modal-{{ loop.index }}').style.display='none';
+}
+
+window.submit{{ loop.index }} = ()=> {
+    fetch('/add_click',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({
+            identifikasi: document.getElementById('ident-{{ loop.index }}').value,
+            freq: document.getElementById('freq-{{ loop.index }}').value,
+            level: document.getElementById('level-{{ loop.index }}').value
+        })
+    }).then(()=>location.reload());
+}
+})();
+</script>
 
 </div>
 {% endfor %}
 </body>
 </html>
 """
-
 
 
 def load_csv_spectrum(filepath, file_type):
