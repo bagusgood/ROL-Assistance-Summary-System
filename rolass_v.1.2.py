@@ -887,9 +887,9 @@ Data diambil dari <b>Rekapitulasi ROL 2025</b>
 
 <div class="note">
 <b>Aturan penamaan:</b><br>
-Kegiatan – Site – Bulan – Tahun<br>
+Kegiatan – Site – Bulan Tahun<br>
 <i>Contoh:</i><br>
-Identifikasi TCI Bukit Bakan Januari 2026
+Identifikasi - TCI Bukit Bakan - Januari 2026
 </div>
 
 
