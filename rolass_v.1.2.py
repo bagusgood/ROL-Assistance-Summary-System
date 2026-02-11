@@ -76,6 +76,7 @@ os.makedirs(STATIC_FOLDER, exist_ok=True)
 CURRENT_SPECTRUM = None
 CURRENT_REKAP = None
 CURRENT_FILE_TYPE = None
+CURRENT_DATASET_NAME = None
 
 # ======================================================
 # FREQUENCY RANGES
@@ -414,8 +415,7 @@ def render_page():
         if df_rekap_band.empty:
             continue
     
-        df_rekap_band["Band"] = band
-        df_rekap_band["Pita Frekuensi"] = f"{fmin/1e6:.0f}–{fmax/1e6:.0f} MHz"
+
         df_rekap_band["_freq_key"] = df_rekap_band["Frekuensi"]
     
         table_df = df_rekap_band[DISPLAY_COLS ]
@@ -430,24 +430,55 @@ def render_page():
             "table": table_df.to_dict("records")
         })
 
+    df_rekap = pd.read_csv("rekap_baru.csv")
+    summary = build_summary(df_rekap)
+    dataset_name = session.get("dataset_name")
 
 
-    return render_template_string(TEMPLATE, plots=plots)
+    return render_template_string(
+        TEMPLATE,
+        plots=plots,
+        summary=summary,
+        dataset_name=dataset_name
+    )
 
 
+UPLOAD_REGISTRY = os.path.join(UPLOAD_FOLDER, "uploads.json")
 
+def load_uploads():
+    if not os.path.exists(UPLOAD_REGISTRY):
+        return []
+    with open(UPLOAD_REGISTRY, "r", encoding="utf-8") as f:
+        return json.load(f)
 
+def save_uploads(data):
+    with open(UPLOAD_REGISTRY, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
 
-# ======================================================
-# ROUTES
-# ======================================================
-@app.route("/identifikasi", methods=["GET", "POST"])
-def identifikasi():
+@app.route("/open/<upload_id>")
+def open_upload(upload_id):
     global CURRENT_SPECTRUM, CURRENT_FILE_TYPE
 
-    # ===============================
+    uploads = load_uploads()
+    u = next((x for x in uploads if x["id"] == upload_id), None)
+
+    if not u:
+        return "Data tidak ditemukan", 404
+
+    CURRENT_SPECTRUM = os.path.join(UPLOAD_FOLDER, u["file"])
+    CURRENT_FILE_TYPE = u["file_type"]
+
+    return redirect(url_for("dashboard"))
+
+@app.route("/identifikasi", methods=["GET", "POST"])
+def identifikasi():
+    global CURRENT_SPECTRUM, CURRENT_FILE_TYPE, CURRENT_DATASET_NAME
+
+    uploads = load_uploads()
+
+    # ======================================================
     # GET → tampilkan halaman upload
-    # ===============================
+    # ======================================================
     if request.method == "GET":
         df = pd.read_csv("rekap_2025.csv")
 
@@ -461,33 +492,58 @@ def identifikasi():
 
         return render_template_string(
             UPLOAD_PAGE,
-            catatan=sorted(catatan_list)
+            catatan=sorted(catatan_list),
+            uploads=uploads
         )
 
-    # ===============================
+    # ======================================================
     # POST → proses identifikasi
-    # ===============================
+    # ======================================================
     spectrum = request.files["spectrum"]
-    CURRENT_FILE_TYPE = request.form.get("file_type")
+    dataset_name = request.form.get("dataset_name")
+    file_type = request.form.get("file_type")
+    catatan = request.form.get("catatan")
 
-    # simpan spectrum
-    sp_path = os.path.join(UPLOAD_FOLDER, spectrum.filename)
+    if not dataset_name:
+        return "Nama dataset wajib diisi", 400
+
+    session["dataset_name"] = dataset_name
+    
+    # ===============================
+    # SIMPAN FILE SPECTRUM
+    # ===============================
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"spectrum_{ts}.csv"
+    sp_path = os.path.join(UPLOAD_FOLDER, filename)
     spectrum.save(sp_path)
+
+    # ===============================
+    # SIMPAN REGISTRY UPLOAD
+    # ===============================
+    uploads.append({
+        "id": ts,
+        "name": dataset_name,
+        "file": filename,
+        "file_type": file_type,
+        "catatan": catatan
+    })
+    save_uploads(uploads)
+
+    # ===============================
+    # SET DATA AKTIF
+    # ===============================
     CURRENT_SPECTRUM = sp_path
+    CURRENT_FILE_TYPE = file_type
 
     # ===============================
     # LOAD & FILTER REKAP
     # ===============================
     df_rekap = pd.read_csv("rekap_2025.csv")
 
-    catatan = request.form.get("catatan")
-
     if catatan:
         df_rekap = df_rekap[df_rekap["Catatan"] == catatan]
 
-    # ===============================
-    # SIMPAN SEBAGAI REKAP AKTIF
-    # ===============================
+    # simpan sebagai rekap aktif
     df_rekap.to_csv("rekap_baru.csv", index=False)
 
     # ===============================
@@ -496,12 +552,6 @@ def identifikasi():
     return redirect(url_for("dashboard"))
 
 
-
-
-
-@app.route("/dashboard")
-def dashboard():
-    return render_page()
 
 @app.route("/delete/<int:no>")
 def delete_row(no):
@@ -621,6 +671,77 @@ def add_popup():
     return {"status": "ok"}, 200
 
 
+def build_summary(df):
+
+    summary = {}
+
+    # ===============================
+    # Legalitas
+    # ===============================
+    summary["legalitas"] = (
+        df.groupby("Legalitas")
+        .size()
+        .reset_index(name="Jumlah")
+        .to_dict("records")
+    )
+
+    # ===============================
+    # Band
+    # ===============================
+    summary["band"] = (
+        df.groupby(["Band"])
+        .size()
+        .reset_index(name="Jumlah")
+        .to_dict("records")
+    )
+
+    # ===============================
+    # Dinas
+    # ===============================
+    summary["dinas"] = (
+        df.groupby(["Dinas"])
+        .size()
+        .reset_index(name="Jumlah")
+        .to_dict("records")
+    )
+
+    # ===============================
+    # Pita Frekuensi
+    # ===============================
+    summary["pita"] = (
+        df.groupby(["Pita Frekuensi", "Legalitas"])
+        .size()
+        .reset_index(name="Jumlah")
+        .to_dict("records")
+    )
+
+    return summary
+
+@app.route("/save_table", methods=["POST"])
+def save_table():
+    data = request.get_json()
+    rows = data.get("rows", {})
+
+    df = pd.read_csv("rekap_baru.csv")
+
+    for no, cols in rows.items():
+        no = int(no)
+        idx = df[df["No"] == no].index
+        if idx.empty:
+            continue
+        idx = idx[0]
+
+        for col, val in cols.items():
+            if col in df.columns:
+                df.loc[idx, col] = val
+
+    df.to_csv("rekap_baru.csv", index=False)
+    return {"status":"ok"}
+
+
+@app.route("/dashboard")
+def dashboard():
+    return render_page()
 
 # ======================================================
 # HTML
@@ -633,67 +754,69 @@ UPLOAD_PAGE = """
 
 <style>
 body {
-    font-family: "Segoe UI", Arial, sans-serif;
+    font-family: Arial, sans-serif;
     background:#f4f6f9;
     padding:40px;
 }
-
 .container {
     max-width:900px;
     margin:auto;
 }
-
 .card {
     background:white;
-    padding:28px;
-    border-radius:14px;
-    box-shadow:0 8px 20px rgba(0,0,0,0.08);
+    padding:25px;
+    border-radius:10px;
+    box-shadow:0 4px 10px rgba(0,0,0,0.08);
 }
 
-h2 {
-    margin-top:0;
-    color:#1f4fd8;
-}
-
-.section {
-    margin-top:30px;
-    padding-top:20px;
-    border-top:1px solid #ddd;
-}
-
-label {
-    font-weight:600;
-    display:block;
-    margin-top:14px;
-}
-
-select, input[type=file] {
+label { display:block; margin-top:15px; font-weight:bold }
+select, input[type=file], input[type=text] {
     width:100%;
-    padding:9px;
+    padding:8px;
     margin-top:6px;
-    border-radius:8px;
-    border:1px solid #ccc;
 }
 
 button {
-    margin-top:30px;
-    background:#1f4fd8;
+    margin-top:25px;
+    background:#e1ae05;
     color:white;
     border:none;
-    padding:12px 30px;
+    padding:12px 28px;
     font-size:16px;
-    border-radius:10px;
+    border-radius:6px;
     cursor:pointer;
 }
+button:hover { background:#c89604 }
 
-button:hover {
-    background:#183fb0;
+/* ===== MODAL ===== */
+.modal {
+    display:none;
+    position:fixed;
+    inset:0;
+    background:rgba(0,0,0,0.45);
 }
-
-.note {
+.modal-content {
+    background:white;
+    width:420px;
+    margin:120px auto;
+    padding:25px;
+    border-radius:10px;
+}
+.modal-content h3 { margin-top:0 }
+.modal-content .note {
     font-size:13px;
-    color:#666;
-    margin-top:6px;
+    color:#555;
+    background:#f8f8f8;
+    padding:10px;
+    border-left:4px solid #e1ae05;
+    margin-bottom:15px;
+}
+.modal-actions {
+    margin-top:20px;
+    text-align:right;
+}
+.modal-actions button {
+    margin-left:10px;
 }
 </style>
 </head>
@@ -705,7 +828,7 @@ button:hover {
 <h2>🔍 Identifikasi Spectrum</h2>
 <p>Upload data pengukuran dan tentukan referensi rekap identifikasi.</p>
 
-<form method="post" enctype="multipart/form-data">
+<form id="uploadForm" method="post" enctype="multipart/form-data">
 
 <!-- ================== FILE PENGUKURAN ================== -->
 <label>Jenis File Pengukuran</label>
@@ -721,11 +844,9 @@ button:hover {
 <input type="file" name="spectrum" accept=".csv" required>
 
 <!-- ================== REFERENSI ================== -->
-<div class="section">
-<h3>📌 Tentukan Referensi</h3>
-<p class="note">
-Data diambil langsung dari <b>rekap_2025.csv</b>.  
-Pilih filter untuk menentukan data referensi identifikasi.
+<h3 style="margin-top:30px">📌 Tentukan Referensi</h3>
+<p style="font-size:13px;color:#555">
+Data diambil dari <b>Rekapitulasi ROL 2025</b>
 </p>
 
 <label>Catatan</label>
@@ -735,13 +856,80 @@ Pilih filter untuk menentukan data referensi identifikasi.
     <option value="{{ v }}">{{ v }}</option>
     {% endfor %}
 </select>
-</div>
 
-<button type="submit">Proses Identifikasi</button>
+<!-- hidden field -->
+<input type="hidden" name="dataset_name" id="dataset_name">
+
+<button type="button" onclick="openPopup()">Proses Identifikasi</button>
+
+
+<!-- ================== LIST DATASET ================== -->
+<h3 style="margin-top:40px">📂 Spectrum Tersimpan</h3>
+<ul class="upload-list">
+{% for u in uploads %}
+<li>
+<a href="/open/{{ u.id }}">📊 {{ u.name }}</a>
+</li>
+{% else %}
+<li><i>Belum ada data</i></li>
+{% endfor %}
+</ul>
+
+</div>
+</div>
 
 </form>
+
+<!-- ================== POPUP NAMA DATASET ================== -->
+<div id="popup" class="modal">
+<div class="modal-content">
+<h3>📝 KASIH NAMA DULU CUYYY!!</h3>
+
+<div class="note">
+<b>Aturan penamaan:</b><br>
+Kegiatan – Site – Bulan – Tahun<br>
+<i>Contoh:</i><br>
+Identifikasi TCI Bukit Bakan Januari 2026
+</div>
+
+
+<label>Nama Penyimpanan</label>
+<input type="text" id="dataset_input" placeholder="Identifikasi TCI Bukit Bakan Januari 2026">
+
+<div class="modal-actions">
+<button onclick="closePopup()">Batal</button>
+<button onclick="submitUpload()">Simpan & Proses</button>
+
+</div>
+
 </div>
 </div>
+
+</div>
+</div>
+
+
+
+<script>
+function openPopup(){
+    document.getElementById("popup").style.display = "block";
+}
+
+function closePopup(){
+    document.getElementById("popup").style.display = "none";
+}
+
+function submitUpload(){
+    const name = document.getElementById("dataset_input").value.trim();
+    if(!name){
+        alert("Nama dataset wajib diisi");
+        return;
+    }
+    document.getElementById("dataset_name").value = name;
+    document.getElementById("uploadForm").submit();
+}
+</script>
+
 </body>
 </html>
 """
@@ -754,6 +942,37 @@ TEMPLATE = """
 <title>Spectrum Dashboard</title>
 <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
 <style>
+.rekap-grid {
+    display:grid;
+    grid-template-columns: repeat(auto-fit,minmax(320px,1fr));
+    gap:20px;
+    margin-bottom:40px;
+}
+.rekap-card {
+    background:#ffffff;
+    padding:15px;
+    border-radius:10px;
+    box-shadow:0 2px 6px rgba(0,0,0,.08);
+}
+.rekap-card h3 {
+    margin-top:0;
+    font-size:15px;
+}
+.rekap-card table {
+    width:100%;
+    border-collapse:collapse;
+    font-size:12px;
+}
+.rekap-card th,
+.rekap-card td {
+    border:1px solid #ccc;
+    padding:6px;
+    text-align:left;
+}
+.rekap-card th {
+    background:#f0f0f0;
+}
+
 :root{
     --primary:#1f4fd8;
     --danger:#d9534f;
@@ -893,18 +1112,107 @@ a.btn-delete:hover {
     background:#ccc;
     margin-left:8px;
 }
+.subtitle {
+    margin-top: -10px;
+    margin-bottom: 20px;
+    color: #555;
+    font-size: 14px;
+}
+.save-btn {
+    background:#1e88e5;
+    color:white;
+    border:none;
+    padding:6px 14px;
+    font-size:13px;
+    border-radius:6px;
+    cursor:pointer;
+}
+.save-btn:hover {
+    background:#1565c0;
+}
+
+
 </style>
 
 </head>
 
 <body>
-<h2>Spectrum Monitoring</h2>
+<h2>
+Spectrum Monitoring
+{% if dataset_name %}
+<br>
+<small style="color:#555">📁 {{ dataset_name }}</small>
+{% endif %}
+</h2>
+
+
+
+<div class="card">
+<h3>📊 Rekapitulasi Identifikasi</h3>
+
+<!-- ================= LEGALITAS ================= -->
+<h4>Rangkuman Berdasarkan Legalitas</h4>
+<table>
+<tr><th>Legalitas</th><th>Jumlah</th></tr>
+{% for r in summary.legalitas %}
+<tr>
+<td>{{ r.Legalitas }}</td>
+<td>{{ r.Jumlah }}</td>
+</tr>
+{% endfor %}
+</table>
+
+<!-- ================= BAND ================= -->
+<h4>Rangkuman Berdasarkan Band</h4>
+<table>
+<tr><th>Band</th><th>Jumlah</th></tr>
+{% for r in summary.band %}
+<tr>
+<td>{{ r.Band }}</td>
+<td>{{ r.Jumlah }}</td>
+</tr>
+{% endfor %}
+</table>
+
+<!-- ================= DINAS ================= -->
+<h4>Rangkuman Berdasarkan Dinas</h4>
+<table>
+<tr><th>Dinas</th><th>Jumlah</th></tr>
+{% for r in summary.dinas %}
+<tr>
+<td>{{ r.Dinas }}</td>
+<td>{{ r.Jumlah }}</td>
+</tr>
+{% endfor %}
+</table>
+
+<!-- ================= PITA ================= -->
+<h4>Rangkuman Berdasarkan Pita Frekuensi</h4>
+<table>
+<tr><th>Pita Frekuensi</th><th>Legalitas</th><th>Jumlah</th></tr>
+{% for r in summary.pita %}
+<tr>
+<td>{{ r["Pita Frekuensi"] }}</td>
+<td>{{ r.Legalitas }}</td>
+<td>{{ r.Jumlah }}</td>
+</tr>
+{% endfor %}
+</table>
+</div>
+
 
 {% for p in plots %}
 <div class="card">
 
 <h3>{{ p.band }}</h3>
 <div id="plot-{{ loop.index }}" style="height:360px;"></div>
+
+<div style="text-align:right; margin-top:10px">
+    <button class="save-btn"
+        onclick="saveTable({{ loop.index }})">
+        💾 Simpan Perubahan
+    </button>
+</div>
 
 <table>
 <tr>
@@ -918,7 +1226,8 @@ a.btn-delete:hover {
 <tr>
 {% for k,v in r.items() %}
 <td contenteditable="true"
-    onblur="saveCell('{{ r['No'] }}','{{ k }}',this.innerText)">
+    data-row="{{ r['No'] }}"
+    data-col="{{ k }}">
     {{ v }}
 </td>
 
@@ -1027,7 +1336,37 @@ window.submit{{ loop.index }} = ()=> {
 }
 })();
 </script>
+<script>
+function saveTable(idx){
+    const table = document.querySelectorAll(
+        '#plot-' + idx
+    )[0].parentElement.querySelectorAll("td[data-row]");
 
+    let rows = {};
+
+    table.forEach(td => {
+        const r = td.dataset.row;
+        const c = td.dataset.col;
+        const v = td.innerText.trim();
+
+        if(!rows[r]) rows[r] = {};
+        rows[r][c] = v;
+    });
+
+    fetch("/save_table",{
+        method:"POST",
+        headers:{ "Content-Type":"application/json" },
+        body: JSON.stringify({ rows: rows })
+    })
+    .then(r => r.json())
+    .then(res => {
+        alert("Perubahan berhasil disimpan");
+    })
+    .catch(err=>{
+        alert("Gagal menyimpan data");
+    });
+}
+</script>
 </div>
 {% endfor %}
 </body>
@@ -1409,9 +1748,8 @@ def Plotting():
     return render_template_string(
         HTML,
         plot_urls=plot_urls,
-        error_msg=error_msg
+        error_msg=error_msg,
     )
-
 
 
 # Middleware untuk proteksi halaman
