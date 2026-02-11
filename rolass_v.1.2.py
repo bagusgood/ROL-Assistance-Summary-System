@@ -31,8 +31,13 @@ import folium
 from folium.plugins import MarkerCluster
 import matplotlib.pyplot as plt
 from io import StringIO
-
-
+from flask import Flask, render_template, jsonify
+import os
+from flask import Flask, render_template, request, jsonify, send_file, send_from_directory, redirect, url_for
+import pandas as pd
+import numpy as np
+from geopy.distance import geodesic
+from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 app.secret_key = "rahasia_super"  # ganti dengan secret key lebih kuat
@@ -62,6 +67,587 @@ matplotlib.use("Agg")
 
 import os
 from flask import Flask, request, render_template_string, redirect, url_for
+
+
+# Konfigurasi upload
+UPLOAD_FOLDER = 'data'
+ALLOWED_EXTENSIONS = {'xlsx', 'xls'}
+EXCEL_FILE = 'data/hasil_klasifikasi_gabungan.xlsx'
+
+def allowed_file(filename):
+    return '.' in filename and \
+           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+# Load data Excel
+def load_bts_data():
+    try:
+        # Cek apakah file Excel ada
+        if not os.path.exists(EXCEL_FILE):
+            print(f"File {EXCEL_FILE} tidak ditemukan")
+            return pd.DataFrame()
+        
+        # Baca file Excel
+        df = pd.read_excel(EXCEL_FILE)
+        
+        # Bersihkan nama kolom
+        df.columns = df.columns.str.strip()
+        
+        # Pilih kolom yang relevan
+        required_columns = [
+            'CLNT_ID', 'CLNT_NAME', 'STN_NAME', 'LAT_VAL', 'LONG_VAL',
+            'LAT_DEG', 'LAT_MIN', 'LAT_SEC', 'LAT_DIR_IND',
+            'LONG_DEG', 'LONG_MIN', 'LONG_SEC', 'LONG_DIR_IND',
+            'cluster_id', 'SERVICE', 'FREQ', 'CITY', 'DISTRICT', 'DIST_RROR (m)'
+        ]
+        
+        if 'LAT_VAL' not in df.columns:
+            df['LAT_VAL'] = None
+            df.to_excel(EXCEL_FILE)
+            
+        if 'LONG_VAL' not in df.columns:
+            df['LONG_VAL'] = None
+            df.to_excel(EXCEL_FILE)
+            
+        if 'DIST_RROR (m)' not in df.columns:
+            df['DIST_RROR (m)'] = None
+            df.to_excel(EXCEL_FILE)
+        
+        if 'cluster_id' not in df.columns:
+            df['cluster_id'] = None
+            df.to_excel(EXCEL_FILE)
+        
+        # Filter hanya kolom yang ada di dataframe
+        available_columns = [col for col in required_columns if col in df.columns]
+        df = df[available_columns]
+        
+        
+        # Konversi koordinat DMS ke decimal degrees untuk koordinat resmi
+        def dms_to_decimal(degrees, minutes, seconds, direction):
+            try:
+                decimal = float(degrees) + float(minutes)/60 + float(seconds)/3600
+                if direction in ['S', 'W']:
+                    decimal = -decimal
+                return decimal
+            except:
+                return None
+        
+        # Buat kolom untuk koordinat resmi
+        df['OFFICIAL_LAT'] = df.apply(lambda row: dms_to_decimal(
+            row.get('LAT_DEG', 0), 
+            row.get('LAT_MIN', 0), 
+            row.get('LAT_SEC', 0), 
+            row.get('LAT_DIR_IND', 'N')
+        ) if pd.notnull(row.get('LAT_DEG')) else None, axis=1)
+        
+        df['OFFICIAL_LONG'] = df.apply(lambda row: dms_to_decimal(
+            row.get('LONG_DEG', 0), 
+            row.get('LONG_MIN', 0), 
+            row.get('LONG_SEC', 0), 
+            row.get('LONG_DIR_IND', 'E')
+        ) if pd.notnull(row.get('LONG_DEG')) else None, axis=1)
+        
+        # Isi data yang kosong - gunakan koordinat resmi jika LAT_VAL/LONG_VAL kosong
+        df['LAT_VAL'] = pd.to_numeric(df['LAT_VAL'], errors='coerce')
+        df['LONG_VAL'] = pd.to_numeric(df['LONG_VAL'], errors='coerce')
+        
+        # Untuk marker di peta: SELALU gunakan koordinat resmi (DMS)
+        df['MARKER_LAT'] = df['OFFICIAL_LAT']  
+        df['MARKER_LNG'] = df['OFFICIAL_LONG']  
+        
+        # Kolom display untuk UI (sama dengan marker)
+        df['DISPLAY_LAT'] = df['MARKER_LAT']
+        df['DISPLAY_LONG'] = df['MARKER_LNG']
+        
+        # Tentukan status berdasarkan DIST_RROR (m)
+        def determine_status(row):
+            if 'DIST_RROR (m)' in row.index:
+                dist_error = row['DIST_RROR (m)']
+                if pd.notnull(dist_error):
+                    try:
+                        # Coba konversi ke float
+                        error_str = str(dist_error).strip()
+                        if error_str in ['', 'nan', 'none', 'null']:
+                            return "belum"  # Belum dihitung
+                        
+                        try:
+                            error_value = float(error_str)
+                            if error_value <= 14:
+                                return "benar"
+                            else:
+                                return "salah"
+                        except ValueError:
+                            import re
+                            numbers = re.findall(r'\d+\.?\d*', error_str)
+                            if numbers:
+                                error_value = float(numbers[0])
+                                if error_value <= 14:
+                                    return "benar"
+                                else:
+                                    return "salah"
+                            else:
+                                return "salah"
+                    except:
+                        return "belum"
+            return "belum"
+        
+        df['DATA_STATUS'] = df.apply(determine_status, axis=1)
+        
+        # Hitung error distance jika ada koordinat aktual dan resmi
+        def calculate_error(row):
+            try:
+                if pd.notnull(row['LAT_VAL']) and pd.notnull(row['LONG_VAL']) and \
+                   pd.notnull(row['OFFICIAL_LAT']) and pd.notnull(row['OFFICIAL_LONG']):
+                    coord1 = (row['LAT_VAL'], row['LONG_VAL'])
+                    coord2 = (row['OFFICIAL_LAT'], row['OFFICIAL_LONG'])
+                    return geodesic(coord1, coord2).meters
+                return None
+            except:
+                return None
+        
+        df['CALCULATED_ERROR_M'] = df.apply(calculate_error, axis=1)
+        
+        # Format untuk JSON
+        df['id'] = df.index
+        df['name'] = df['STN_NAME'].fillna('Unknown Tower')
+        df['lat'] = df['DISPLAY_LAT']  
+        df['lng'] = df['DISPLAY_LONG']  
+        df['actual_lat'] = df['LAT_VAL']  
+        df['actual_lng'] = df['LONG_VAL'] 
+        df['official_lat'] = df['OFFICIAL_LAT']
+        df['official_lng'] = df['OFFICIAL_LONG']
+        df['cluster'] = df['cluster_id'].fillna(0).astype(int)
+        df['provider'] = df['CLNT_NAME'].fillna('Unknown')
+        
+        # Statistik
+        total_towers = len(df)
+        benar_diambil = len(df[df['DATA_STATUS'] == 'benar'])
+        salah_diambil = len(df[df['DATA_STATUS'] == 'salah'])
+        belum_diambil = len(df[df['DATA_STATUS'] == 'belum'])
+        
+        return df
+    except Exception as e:
+        print(f"Error loading data: {e}")
+        return pd.DataFrame()
+    
+# Fungsi untuk update data di Excel
+def update_tower_data(tower_id, measured_error, measured_lat=None, measured_lng=None):
+    try:
+        # Baca semua sheet
+        excel_data = pd.read_excel(EXCEL_FILE, sheet_name=None)
+        
+        # Ambil sheet utama
+        main_sheet_name = 'Sheet1'
+        if main_sheet_name in excel_data:
+            df = excel_data[main_sheet_name]
+            
+            # Pastikan tower_id valid
+            if tower_id >= 0 and tower_id < len(df):
+                # Update DIST_RROR (m)
+                if 'DIST_RROR (m)' in df.columns:
+                    df.at[tower_id, 'DIST_RROR (m)'] = measured_error
+                
+                # Update LAT_VAL dan LONG_VAL jika diberikan
+                if measured_lat is not None and 'LAT_VAL' in df.columns:
+                    df.at[tower_id, 'LAT_VAL'] = measured_lat
+                
+                if measured_lng is not None and 'LONG_VAL' in df.columns:
+                    df.at[tower_id, 'LONG_VAL'] = measured_lng
+                
+                # Simpan kembali ke Excel
+                with pd.ExcelWriter(EXCEL_FILE, engine='openpyxl') as writer:
+                    for sheet_name, sheet_df in excel_data.items():
+                        if sheet_name == main_sheet_name:
+                            df.to_excel(writer, sheet_name=sheet_name, index=False)
+                        else:
+                            sheet_df.to_excel(writer, sheet_name=sheet_name, index=False)
+                
+                print(f"Updated tower {tower_id}: error={measured_error}m")
+                return True
+            else:
+                print(f"Invalid tower_id: {tower_id}")
+                return False
+        else:
+            print(f"Sheet {main_sheet_name} not found")
+            return False
+    except Exception as e:
+        print(f"Error updating Excel: {e}")
+        return False
+
+bts_data = load_bts_data()
+
+
+@app.route("/run_bts", methods=["GET", "POST"])
+def run_bts():
+    """Halaman utama dengan peta dan semua tower"""
+    if not os.path.exists(EXCEL_FILE):
+        # Redirect ke halaman upload jika file tidak ditemukan
+        return redirect(url_for('upload_file'))
+    try:
+         # Ambil informasi file
+        file_info = {
+            'exists': os.path.exists(EXCEL_FILE),
+            'size': os.path.getsize(EXCEL_FILE) if os.path.exists(EXCEL_FILE) else 0
+        }
+       
+        
+        # Ambil data unik untuk dropdown
+        towers = bts_data[['id', 'name', 'cluster', 'provider', 'DATA_STATUS']].to_dict('records')
+        clusters = sorted(bts_data['cluster'].unique().tolist())
+        providers = sorted(bts_data['provider'].unique().tolist())
+        
+        # Hitung statistik
+        total_towers = len(bts_data)
+        benar_diambil = len(bts_data[bts_data['DATA_STATUS'] == 'benar'])
+        salah_diambil = len(bts_data[bts_data['DATA_STATUS'] == 'salah'])
+        belum_diambil = len(bts_data[bts_data['DATA_STATUS'] == 'belum'])
+        
+        
+        # Konversi data ke GeoJSON format
+        features = []
+        for idx, row in bts_data.iterrows():
+            # Gunakan display coordinates (jika kosong, gunakan official)
+            display_lat = row['lat']
+            display_lng = row['lng']
+            
+            # Jika masih kosong, skip (tapi seharusnya sudah diisi di load_bts_data)
+            if pd.isnull(display_lat) or pd.isnull(display_lng):
+                continue
+            
+            # Ambil nilai dist_error
+            dist_error_value = None
+            if 'dist_error' in row and pd.notnull(row['dist_error']):
+                try:
+                    dist_error_value = float(row['dist_error'])
+                except:
+                    dist_error_value = None
+            
+            feature = {
+                "type": "Feature",
+                "properties": {
+                    "id": int(row['id']),
+                    "name": str(row['name']),
+                    "cluster": int(row['cluster']),
+                    "provider": str(row['provider']),
+                    "status": str(row['DATA_STATUS']),
+                    "error_m": float(row['CALCULATED_ERROR_M']) if pd.notnull(row['CALCULATED_ERROR_M']) else None,
+                    "dist_error": dist_error_value,
+                    "has_coords": pd.notnull(row['actual_lat']) and pd.notnull(row['actual_lng'])
+                },
+                "geometry": {
+                    "type": "Point",
+                    "coordinates": [float(display_lng), float(display_lat)]
+                }
+            }
+            features.append(feature)
+        
+        geojson_data = {
+            "type": "FeatureCollection",
+            "features": features
+        }
+        
+        return render_template('index.html', 
+                             towers=towers,
+                             clusters=clusters,
+                             providers=providers,
+                             total_towers=total_towers,
+                             benar_diambil=benar_diambil,
+                             salah_diambil=salah_diambil,
+                             belum_diambil=belum_diambil,
+                             file_info = file_info,
+                             geojson_data=json.dumps(geojson_data))
+    except Exception as e:
+        print(f"Error in index route: {e}")
+        return f"Error: {str(e)}", 500
+    
+# Route untuk upload file
+@app.route('/upload', methods=['GET', 'POST'])
+def upload_file():
+     # Ambil informasi file
+    file_info = {
+        'exists': os.path.exists(EXCEL_FILE),
+        'size': os.path.getsize(EXCEL_FILE) if os.path.exists(EXCEL_FILE) else 0
+    }
+    """Halaman untuk upload file Excel"""
+    if request.method == 'POST':
+        # Cek apakah ada file yang diupload
+        if 'excel_file' not in request.files:
+            return jsonify({"error": "Tidak ada file yang dipilih"}), 400
+        
+        file = request.files['excel_file']
+        
+        # Jika user tidak memilih file
+        if file.filename == '':
+            return jsonify({"error": "Tidak ada file yang dipilih"}), 400
+        
+        if file and allowed_file(file.filename):
+            try:
+                # Simpan file
+                filename = secure_filename('hasil_klasifikasi_gabungan.xlsx')
+                filepath = os.path.join("data/" + filename)
+                file.save(filepath)
+                
+                # Reload data
+                global bts_data
+                bts_data = load_bts_data()
+                
+                # Hitung statistik baru
+                total_towers = len(bts_data)
+                benar_diambil = len(bts_data[bts_data['DATA_STATUS'] == 'benar'])
+                salah_diambil = len(bts_data[bts_data['DATA_STATUS'] == 'salah'])
+                belum_diambil = len(bts_data[bts_data['DATA_STATUS'] == 'belum'])
+                
+                return jsonify({
+                    "success": True,
+                    "message": "File berhasil diupload dan data telah direload",
+                    "filename": filename,
+                    "total_towers": total_towers,
+                    "benar_diambil": benar_diambil,
+                    "salah_diambil": salah_diambil,
+                    "belum_diambil": belum_diambil
+                })
+                
+            except Exception as e:
+                return jsonify({"error": f"Error saat menyimpan file: {str(e)}"}), 500
+        
+        return jsonify({"error": "Format file tidak diizinkan. Hanya file Excel (.xlsx, .xls)"}), 400
+    
+    # GET request - tampilkan halaman upload
+    return render_template('upload.html',
+                           file_info=file_info)
+    
+# Route untuk mendownload file Excel yang ada di folder data
+@app.route('/download-excel')
+def download_excel_bts():
+    """Download file Excel saat ini dari folder data"""
+    try:
+        # Cek apakah file ada
+        if not os.path.exists(EXCEL_FILE):
+            return jsonify({"error": "File Excel tidak ditemukan. Silakan upload file terlebih dahulu."}), 404
+        
+        # Tentukan nama file untuk download
+        download_name = 'hasil_analisis_bts_tower.xlsx'
+        
+        # Kirim file sebagai attachment
+        return send_file(
+            EXCEL_FILE,
+            as_attachment=True,
+            download_name=download_name,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+    except Exception as e:
+        print(f"Error downloading Excel: {e}")
+        return jsonify({"error": str(e)}), 500
+    
+@app.route('/download-excel-<string:filename>')
+def download_excel_custom(filename):
+    """Download file Excel dengan nama custom"""
+    try:
+        # Cek apakah file ada
+        if not os.path.exists(EXCEL_FILE):
+            return jsonify({"error": "File Excel tidak ditemukan"}), 404
+        
+        # Validasi nama file untuk keamanan
+        if not filename.endswith('.xlsx'):
+            filename = filename + '.xlsx'
+        
+        # Kirim file sebagai attachment
+        return send_file(
+            EXCEL_FILE,
+            as_attachment=True,
+            download_name=filename,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+    except Exception as e:
+        print(f"Error downloading Excel with custom name: {e}")
+        return jsonify({"error": str(e)}), 500
+    
+# Route untuk informasi file saat ini
+@app.route('/api/current-file-info')
+def get_current_file_info():
+    """API untuk mendapatkan informasi file Excel saat ini"""
+    try:
+        if os.path.exists(EXCEL_FILE):
+            file_stat = os.stat(EXCEL_FILE)
+            return jsonify({
+                'exists': True,
+                'filename': 'hasil_klasifikasi_gabungan.xlsx',
+                'size': file_stat.st_size,
+                'modified': file_stat.st_mtime,
+                'last_modified': file_stat.st_mtime,
+                'path': EXCEL_FILE
+            })
+        else:
+            return jsonify({'exists': False})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    
+
+
+@app.route('/api/towers')
+def get_towers():
+    """API untuk mendapatkan semua tower"""
+    towers = bts_data[['id', 'name', 'lat', 'lng', 'cluster', 'provider', 'DATA_STATUS']].to_dict('records')
+    return jsonify(towers)
+
+@app.route('/api/tower/<int:tower_id>')
+def get_tower(tower_id):
+    """API untuk mendapatkan data tower tertentu"""
+    if tower_id >= 0 and tower_id < len(bts_data):
+        tower_data = bts_data.iloc[tower_id].to_dict()
+        return jsonify(tower_data)
+    return jsonify({"error": "Tower not found"}), 404
+
+@app.route('/api/update-tower', methods=['POST'])
+def update_tower():
+    """API untuk update data tower setelah pengukuran"""
+    try:
+        data = request.json
+        tower_id = data.get('tower_id')
+        measured_error = data.get('measured_error')
+        measured_lat = data.get('measured_lat')
+        measured_lng = data.get('measured_lng')
+        
+        if tower_id is None or measured_error is None:
+            return jsonify({"error": "Missing required parameters"}), 400
+        
+        # Update di Excel file
+        success = update_tower_data(
+            tower_id=tower_id,
+            measured_error=measured_error,
+            measured_lat=measured_lat,
+            measured_lng=measured_lng
+        )
+        
+        if success:
+            # Reload data
+            global bts_data
+            bts_data = load_bts_data()
+            
+            return jsonify({
+                "success": True,
+                "message": "Data berhasil disimpan",
+                "tower_id": tower_id,
+                "new_error": measured_error
+            })
+        else:
+            return jsonify({"error": "Gagal menyimpan data"}), 500
+            
+    except Exception as e:
+        print(f"Error updating tower: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/search')
+def search_towers():
+    """API untuk search tower"""
+    query = request.args.get('q', '').lower()
+    cluster = request.args.get('cluster', '')
+    provider = request.args.get('provider', '')
+    
+    filtered = bts_data.copy()
+    
+    if query:
+        filtered = filtered[filtered['name'].str.lower().str.contains(query, na=False) |
+                           filtered['provider'].str.lower().str.contains(query, na=False)]
+    
+    if cluster:
+        filtered = filtered[filtered['cluster'] == int(cluster)]
+    
+    if provider:
+        filtered = filtered[filtered['provider'] == provider]
+    
+    results = filtered[['id', 'name', 'lat', 'lng', 'cluster', 'provider']].to_dict('records')
+    return jsonify(results)
+
+@app.route('/calculate-error', methods=['POST'])
+def calculate_error():
+    """API untuk menghitung error distance"""
+    data = request.json
+    tower_id = data.get('tower_id')
+    clicked_lat = data.get('lat')
+    clicked_lng = data.get('lng')
+    
+    if not all([tower_id, clicked_lat, clicked_lng]):
+        return jsonify({"error": "Missing parameters"}), 400
+    
+    tower = bts_data[bts_data['id'] == tower_id]
+    if tower.empty:
+        return jsonify({"error": "Tower not found"}), 404
+    
+    tower = tower.iloc[0]
+    
+    # Koordinat resmi dari data
+    official_lat = tower['OFFICIAL_LAT']
+    official_lng = tower['OFFICIAL_LONG']
+    
+    if pd.isnull(official_lat) or pd.isnull(official_lng):
+        return jsonify({"error": "Official coordinates not available"}), 400
+    
+    # Hitung distance antara koordinat resmi dan yang diklik
+    coord1 = (official_lat, official_lng)
+    coord2 = (clicked_lat, clicked_lng)
+    
+    try:
+        distance_m = geodesic(coord1, coord2).meters
+        
+        # Hitung juga error dari data aktual
+        actual_error = None
+        if pd.notnull(tower['CALCULATED_ERROR_M']):
+            actual_error = tower['CALCULATED_ERROR_M']
+        
+        return jsonify({
+            "success": True,
+            "tower_name": str(tower['name']),
+            "official_coords": {
+                "lat": float(official_lat),
+                "lng": float(official_lng)
+            },
+            "clicked_coords": {
+                "lat": float(clicked_lat),
+                "lng": float(clicked_lng)
+            },
+            "error_distance_m": round(distance_m, 2),
+            "actual_error_m": round(actual_error, 2) if actual_error else None,
+            "cluster": int(tower['cluster']),
+            "provider": str(tower['provider'])
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/tower/<int:tower_id>')
+def tower_detail(tower_id):
+    """Halaman detail tower"""
+    tower = bts_data[bts_data['id'] == tower_id]
+    if tower.empty:
+        return "Tower not found", 404
+    
+    tower_data = tower.iloc[0].to_dict()
+    
+    # Konversi data ke format yang aman untuk JavaScript
+    for key, value in tower_data.items():
+        if isinstance(value, (np.integer, np.floating)):
+            tower_data[key] = float(value)
+        elif pd.isnull(value):
+            tower_data[key] = None
+    
+    return render_template('result.html', tower=tower_data)
+
+@app.route('/api/stats')
+def get_stats():
+    """API untuk mendapatkan statistik data"""
+    total = len(bts_data)
+    benar = len(bts_data[bts_data['DATA_STATUS'] == 'benar'])
+    salah = len(bts_data[bts_data['DATA_STATUS'] == 'salah'])
+    belum = len(bts_data[bts_data['DATA_STATUS'] == 'belum'])
+    
+    return jsonify({
+        'total': total,
+        'benar': benar,
+        'salah': salah,
+        'belum': belum,
+        'persen_benar': round(benar/total*100, 1) if total > 0 else 0,
+        'persen_salah': round(salah/total*100, 1) if total > 0 else 0,
+        'persen_belum': round(belum/total*100, 1) if total > 0 else 0
+    })
 
 # ======================================================
 # CONFIG
@@ -1372,384 +1958,6 @@ function saveTable(idx){
 </body>
 </html>
 """
-
-
-def load_csv_spectrum(filepath, file_type):
-    import pandas as pd
-    import csv
-    from io import StringIO
-
-    # ==================================================
-    # 1. KHUSUS LS TELCOM (PAKAI LOGIKA FIX)
-    # ==================================================
-    if file_type == "LS TELCOM":
-        try:
-            df = pd.read_csv(
-                filepath,
-                sep=";",
-                skiprows=11,
-                encoding="latin1",
-                engine="python"
-            )
-
-            # Hapus 3 kolom pertama
-            df = df.iloc[:, 3:]
-
-            # Transpose
-            df_t = df.T.reset_index()
-            df_t.rename(columns={"index": "Frequency (Hz)"}, inplace=True)
-
-            # Bersihkan Frequency
-            df_t["Frequency (Hz)"] = (
-                df_t["Frequency (Hz)"]
-                .astype(str)
-                .str.replace(",", ".", regex=False)
-                .str.replace(r"[^0-9\.]", "", regex=True)
-            )
-            df_t["Frequency (Hz)"] = pd.to_numeric(df_t["Frequency (Hz)"], errors="coerce")
-
-            # Numeric semua kolom level
-            for col in df_t.columns[1:]:
-                df_t[col] = pd.to_numeric(df_t[col], errors="coerce")
-
-            # Level = maksimum
-            df_t["Level (dBµV/m)"] = df_t.iloc[:, 1:].max(axis=1)
-
-            df_final = df_t[["Frequency (Hz)", "Level (dBµV/m)"]].dropna()
-
-            if df_final.empty:
-                raise ValueError("Data LS TELCOM kosong setelah parsing")
-
-            return df_final
-
-        except Exception as e:
-            raise ValueError(f"Gagal membaca CSV LS TELCOM: {e}")
-
-    # ==================================================
-    # 2. FILE LAIN (ARGUS, ARGUS V6, TCI)
-    # ==================================================
-    # Baca sebagai STRING sejak awal (ANTI SAVE-AS BUG)
-    with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
-        lines = f.readlines()
-
-    # ==================================================
-    # 3. Cari baris header (Frequency)
-    # ==================================================
-    header_row = None
-    for i, line in enumerate(lines):
-        if "frequency" in line.lower():
-            header_row = i
-            break
-
-    if header_row is None:
-        raise ValueError("Header dengan kolom 'Frequency' tidak ditemukan")
-
-    # Aturan khusus TCI
-    if file_type == "TCI" and header_row < 20:
-        header_row = 20
-
-    # ==================================================
-    # 4. Gabungkan ulang teks CSV
-    # ==================================================
-    data_text = "".join(lines[header_row:])
-
-    # ==================================================
-    # 5. Auto-detect delimiter
-    # ==================================================
-    try:
-        dialect = csv.Sniffer().sniff(data_text[:2000])
-        sep = dialect.delimiter
-    except Exception:
-        sep = ","  # fallback paling aman
-
-    # ==================================================
-    # 6. Baca CSV dari StringIO
-    # ==================================================
-    df = pd.read_csv(
-        StringIO(data_text),
-        sep=sep,
-        engine="python",
-        on_bad_lines="skip"
-    )
-
-    # ==================================================
-    # 7. Bersihkan nama kolom
-    # ==================================================
-    df.columns = (
-        df.columns.astype(str)
-        .str.strip()
-        .str.replace("\ufeff", "", regex=False)
-        .str.replace("\n", " ", regex=False)
-    )
-
-    # ==================================================
-    # 8. Deteksi kolom Frequency
-    # ==================================================
-    freq_col = None
-    freq_unit = "Hz"
-
-    for c in df.columns:
-        cl = c.lower()
-        if "frequency" in cl:
-            freq_col = c
-            if "mhz" in cl:
-                freq_unit = "MHz"
-            break
-
-    if freq_col is None:
-        raise ValueError(f"Kolom Frequency tidak ditemukan: {list(df.columns)}")
-
-    # ==================================================
-    # 9. Deteksi kolom Level
-    # ==================================================
-    level_col = None
-    for c in df.columns:
-        cl = c.lower()
-        if "level" in cl or "field strength" in cl:
-            level_col = c
-            break
-
-    if level_col is None:
-        raise ValueError(f"Kolom Level tidak ditemukan: {list(df.columns)}")
-
-    # ==================================================
-    # 10. Konversi numeric (AMAN)
-    # ==================================================
-    freq = (
-        df[freq_col]
-        .astype(str)
-        .str.replace(",", ".", regex=False)
-        .str.replace(r"[^0-9\.]", "", regex=True)
-    )
-    freq = pd.to_numeric(freq, errors="coerce")
-
-    level = (
-        df[level_col]
-        .astype(str)
-        .str.replace(",", ".", regex=False)
-        .str.replace(r"[^0-9\.\-]", "", regex=True)
-    )
-    level = pd.to_numeric(level, errors="coerce")
-
-    df_clean = pd.DataFrame({
-        "Frequency (Hz)": freq,
-        "Level (dBµV/m)": level
-    }).dropna()
-
-    # ==================================================
-    # 11. Konversi MHz → Hz
-    # ==================================================
-    if freq_unit == "MHz":
-        df_clean["Frequency (Hz)"] *= 1e6
-
-    if df_clean.empty:
-        raise ValueError("Data kosong setelah parsing")
-
-    return df_clean
-
-
-def plot_spectrum_per_band(df):
-    plot_urls = []
-
-    for band, (fmin, fmax) in FREQ_RANGES.items():
-        df_band = df[
-            (df["Frequency (Hz)"] >= fmin) &
-            (df["Frequency (Hz)"] <= fmax)
-        ]
-
-        if df_band.empty:
-            continue
-
-        plt.figure(figsize=(10, 5))
-        plt.plot(
-            df_band["Frequency (Hz)"] / 1e6,
-            df_band["Level (dBµV/m)"]
-        )
-
-        plt.xlabel("Frequency (MHz)")
-        plt.ylabel("Level (dBµV/m)")
-        plt.title(f"Spectrum {band}")
-
-        # 🔒 FIXED SCALE (INI SAJA YANG DITAMBAHKAN)
-        #plt.ylim(0, 100)
-
-        plt.grid(True)
-
-        safe_band = band.replace("–", "-").replace(" ", "")
-        filename = f"spectrum_{safe_band}.png"
-        filepath = os.path.join(STATIC_FOLDER, filename)
-
-        plt.savefig(filepath, dpi=300, bbox_inches="tight")
-        plt.close()
-
-        plot_urls.append(f"/static/{filename}")
-
-    return plot_urls
-
-
-@app.route("/plotting", methods=["GET", "POST"])
-def Plotting():
-    plot_urls = None
-    error_msg = None
-
-    if request.method == "POST":
-        try:
-            file = request.files.get("file")
-            file_type = request.form.get("file_type")
-
-            if not file or not file.filename.lower().endswith(".csv"):
-                raise ValueError("File CSV tidak valid")
-
-            if not file_type:
-                raise ValueError("Jenis file pengukuran belum dipilih")
-
-            filepath = os.path.join(UPLOAD_FOLDER, file.filename)
-            file.save(filepath)
-
-            df = load_csv_spectrum(filepath, file_type)
-            plot_urls = plot_spectrum_per_band(df)
-
-        except Exception as e:
-            error_msg = str(e)
-
-    HTML = """
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Spectrum Plotting</title>
-        <style>
-            body {
-                font-family: Arial, sans-serif;
-                background: #f4f6f9;
-                margin: 0;
-                padding: 40px;
-            }
-            .container {
-                max-width: 900px;
-                margin: auto;
-            }
-            .card {
-                background: white;
-                padding: 25px;
-                border-radius: 10px;
-                box-shadow: 0 4px 10px rgba(0,0,0,0.08);
-            }
-            h2 {
-                margin-top: 0;
-                color: #333;
-            }
-            .upload-box {
-                border: 2px dashed #e1ae05;
-                padding: 25px;
-                border-radius: 10px;
-                text-align: center;
-                background: #fffbea;
-            }
-            select, input[type=file] {
-                width: 100%;
-                padding: 8px;
-                margin-top: 10px;
-            }
-            button {
-                margin-top: 20px;
-                background: #e1ae05;
-                color: white;
-                border: none;
-                padding: 10px 25px;
-                font-size: 16px;
-                border-radius: 6px;
-                cursor: pointer;
-            }
-            button:hover {
-                background: #c89604;
-            }
-            .error {
-                margin-top: 15px;
-                padding: 10px;
-                background: #ffecec;
-                color: #b00000;
-                border-radius: 6px;
-            }
-            .plots {
-                margin-top: 30px;
-            }
-            .plot-card {
-                background: white;
-                padding: 15px;
-                border-radius: 10px;
-                box-shadow: 0 3px 8px rgba(0,0,0,0.08);
-                margin-bottom: 25px;
-                text-align: center;
-            }
-            .plot-card img {
-                width: 100%;
-                max-width: 800px;
-                border-radius: 6px;
-            }
-            .footer {
-                text-align: center;
-                margin-top: 40px;
-                color: #777;
-                font-size: 13px;
-            }
-        </style>
-    </head>
-
-    <body>
-    <div class="container">
-        <div class="card">
-            <h2>📈 Spectrum Plotting</h2>
-            <p>Upload file CSV hasil pengukuran spektrum frekuensi.</p>
-
-            <div class="upload-box">
-                <form method="POST" enctype="multipart/form-data">
-
-                    <label><b>Jenis File Pengukuran</b></label>
-                    <select name="file_type" required>
-                        <option value="">-- Pilih Jenis File --</option>
-                        <option value="ARGUS">ARGUS</option>
-                        <option value="ARGUS V6">ARGUS V6</option>
-                        <option value="LS TELCOM">LS TELCOM</option>
-                        <option value="TCI">TCI</option>
-                    </select>
-
-                    <label style="margin-top:15px; display:block;"><b>Pilih File CSV</b></label>
-                    <input type="file" name="file" accept=".csv" required>
-
-                    <button type="submit">Upload & Plot</button>
-                </form>
-
-                {% if error_msg %}
-                <div class="error">
-                    <b>Error:</b> {{ error_msg }}
-                </div>
-                {% endif %}
-            </div>
-        </div>
-
-        {% if plot_urls %}
-        <div class="plots">
-            {% for url in plot_urls %}
-            <div class="plot-card">
-                <img src="{{ url }}">
-            </div>
-            {% endfor %}
-        </div>
-        {% endif %}
-
-        <div class="footer">
-            ROL Assistance Summary System
-        </div>
-    </div>
-    </body>
-    </html>
-    """
-
-    return render_template_string(
-        HTML,
-        plot_urls=plot_urls,
-        error_msg=error_msg,
-    )
 
 
 # Middleware untuk proteksi halaman
@@ -3615,17 +3823,18 @@ def index():
                 Unduh Nodin
             </button>
         
-            <a href="{{ url_for('Plotting') }}"
-                   style="color:white; background:#e1ae05; border:none; padding:10px 20px; font-size:16px; border-radius:6px; text-decoration:none;">
-                    Plotting
-                </a>
-            </a>
-            
             <a href="{{ url_for('identifikasi') }}"
                    style="color:white; background:#e1ae05; border:none; padding:10px 20px; font-size:16px; border-radius:6px; text-decoration:none;">
                     Identifikasi
                 </a>
             </a>
+            
+            <a href="{{ url_for('run_bts') }}"
+                   style="color:white; background:#e1ae05; border:none; padding:10px 20px; font-size:16px; border-radius:6px; text-decoration:none;">
+                    Prima Aksi
+                </a>
+            </a>
+
             
             <a href="{{ url_for('logout') }}"
                style="color:white; background:red; border:none; padding:10px 20px; font-size: 16px; border-radius:6px;">
