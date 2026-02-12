@@ -1,0 +1,457 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Upload Data Excel - BTS Tower Analyzer</title>
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='style.css') }}"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+    />
+    <style>
+      .upload-container {
+        max-width: 800px;
+        margin: 2rem auto;
+        padding: 2rem;
+      }
+
+      .upload-box {
+        border: 3px dashed #ddd;
+        border-radius: 10px;
+        padding: 3rem;
+        text-align: center;
+        margin: 2rem 0;
+        transition: all 0.3s;
+        background: #f8f9fa;
+      }
+
+      .upload-box:hover {
+        border-color: #667eea;
+        background: #f0f2ff;
+      }
+
+      .upload-box.dragover {
+        border-color: #48bb78;
+        background: #f0fff4;
+      }
+
+      .upload-icon {
+        font-size: 4rem;
+        color: #667eea;
+        margin-bottom: 1rem;
+      }
+
+      .file-input {
+        display: none;
+      }
+
+      .file-label {
+        display: inline-block;
+        padding: 1rem 2rem;
+        background: #667eea;
+        color: white;
+        border-radius: 6px;
+        cursor: pointer;
+        font-weight: 600;
+        transition: background 0.3s;
+      }
+
+      .file-label:hover {
+        background: #5a67d8;
+      }
+
+      .file-info {
+        margin-top: 1rem;
+        padding: 1rem;
+        background: white;
+        border-radius: 6px;
+        border: 1px solid #e2e8f0;
+      }
+
+      .requirements {
+        background: #fff3cd;
+        border: 1px solid #ffeaa7;
+        border-radius: 6px;
+        padding: 1.5rem;
+        margin: 1.5rem 0;
+      }
+
+      .requirements h4 {
+        color: #856404;
+        margin-bottom: 1rem;
+      }
+
+      .requirements ul {
+        text-align: left;
+        margin-left: 2rem;
+      }
+
+      .requirements li {
+        margin: 0.5rem 0;
+        color: #856404;
+      }
+
+      .backup-list {
+        margin-top: 2rem;
+        border-top: 1px solid #e2e8f0;
+        padding-top: 1rem;
+      }
+
+      .backup-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 1rem;
+        border: 1px solid #e2e8f0;
+        border-radius: 6px;
+        margin: 0.5rem 0;
+        background: white;
+      }
+
+      .progress-bar {
+        width: 100%;
+        height: 10px;
+        background: #e2e8f0;
+        border-radius: 5px;
+        margin: 1rem 0;
+        overflow: hidden;
+      }
+
+      .progress {
+        height: 100%;
+        background: #48bb78;
+        width: 0%;
+        transition: width 0.3s;
+      }
+
+      .current-file {
+        background: #e6fffa;
+        border: 1px solid #38b2ac;
+        border-radius: 6px;
+        padding: 1rem;
+        margin: 1rem 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <header>
+        <h1><i class="fas fa-file-upload"></i> Upload Data Excel</h1>
+        <p class="subtitle">
+          Unggah file Excel berisi data tower BTS untuk dianalisis
+        </p>
+      </header>
+
+      <div class="upload-container">
+        <!-- Info file saat ini -->
+        <div class="current-file" id="currentFileInfo">
+          <h4><i class="fas fa-file-excel"></i> File Saat Ini</h4>
+          {% if file_info.exists %}
+          <p><strong>File:</strong> hasil_klasifikasi_gabungan.xlsx</p>
+          <p>
+            <strong>Ukuran:</strong> {{ (file_info.size / 1024)|round(2) }} KB
+          </p>
+          {% else %}
+          <p>
+            <strong>Status:</strong>
+            <span style="color: #ef4444">File data belum tersedia</span>
+          </p>
+          <p>Silakan upload file Excel untuk memulai analisis.</p>
+          {% endif %}
+        </div>
+
+        <!-- Upload Box -->
+        <div class="upload-box" id="uploadBox">
+          <div class="upload-icon">
+            <i class="fas fa-file-excel"></i>
+          </div>
+          <h3>Drag & Drop File Excel</h3>
+          <p>atau</p>
+
+          <form id="uploadForm">
+            <input
+              type="file"
+              id="excelFile"
+              name="excel_file"
+              class="file-input"
+              accept=".xlsx,.xls"
+              required
+            />
+            <label for="excelFile" class="file-label">
+              <i class="fas fa-folder-open"></i> Pilih File Excel
+            </label>
+
+            <div id="fileName" class="file-info">
+              <p>Belum ada file dipilih</p>
+            </div>
+
+            <div class="progress-bar">
+              <div class="progress" id="uploadProgress"></div>
+            </div>
+
+            <div id="uploadStatus"></div>
+
+            <div style="margin-top: 2rem">
+              <button
+                style="margin-bottom: 1rem"
+                type="button"
+                onclick="uploadFile()"
+                class="save-btn"
+                id="uploadBtn"
+              >
+                <i class="fas fa-upload"></i> Upload File
+              </button>
+              <a href="/" class="reset-btn">
+                <i class="fas fa-home"></i> Kembali ke Dashboard
+              </a>
+            </div>
+          </form>
+        </div>
+
+        <!-- Persyaratan Format -->
+        <div class="requirements">
+          <h4>
+            <i class="fas fa-info-circle"></i> Persyaratan Format File Excel:
+          </h4>
+          <ul>
+            <li>Format file: .xlsx atau .xls</li>
+            <li>Harus memiliki minimal kolom berikut:</li>
+            <ul>
+              <li>
+                <code>CLNT_ID</code>, <code>CLNT_NAME</code>,
+                <code>STN_NAME</code>
+              </li>
+              <li>
+                <code>LAT_DEG</code>, <code>LAT_MIN</code>,
+                <code>LAT_SEC</code>, <code>LAT_DIR_IND</code>
+              </li>
+              <li>
+                <code>LONG_DEG</code>, <code>LONG_MIN</code>,
+                <code>LONG_SEC</code>, <code>LONG_DIR_IND</code>
+              </li>
+            </ul>
+            <li>
+              Nama file akan otomatis diubah menjadi:
+              <code>hasil_klasifikasi_gabungan.xlsx</code>
+            </li>
+          </ul>
+        </div>
+      </div>
+
+      <footer>
+        <p>BTS Tower Error Analyzer | Upload Data Excel</p>
+      </footer>
+    </div>
+
+    <script>
+      // Drag and drop functionality
+      const uploadBox = document.getElementById("uploadBox");
+      const fileInput = document.getElementById("excelFile");
+      const fileName = document.getElementById("fileName");
+      const uploadProgress = document.getElementById("uploadProgress");
+      const uploadStatus = document.getElementById("uploadStatus");
+      const uploadBtn = document.getElementById("uploadBtn");
+
+      // Prevent default drag behaviors
+      ["dragenter", "dragover", "dragleave", "drop"].forEach((eventName) => {
+        uploadBox.addEventListener(eventName, preventDefaults, false);
+        document.body.addEventListener(eventName, preventDefaults, false);
+      });
+
+      // Highlight drop zone when item is dragged over it
+      ["dragenter", "dragover"].forEach((eventName) => {
+        uploadBox.addEventListener(eventName, highlight, false);
+      });
+
+      ["dragleave", "drop"].forEach((eventName) => {
+        uploadBox.addEventListener(eventName, unhighlight, false);
+      });
+
+      // Handle dropped files
+      uploadBox.addEventListener("drop", handleDrop, false);
+
+      // Handle file input change
+      fileInput.addEventListener("change", handleFileSelect, false);
+
+      function preventDefaults(e) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+
+      function highlight() {
+        uploadBox.classList.add("dragover");
+      }
+
+      function unhighlight() {
+        uploadBox.classList.remove("dragover");
+      }
+
+      function handleDrop(e) {
+        const dt = e.dataTransfer;
+        const files = dt.files;
+
+        if (files.length > 0) {
+          fileInput.files = files;
+          handleFileSelect();
+        }
+      }
+
+      function handleFileSelect() {
+        const file = fileInput.files[0];
+        if (file) {
+          // Validasi ekstensi file
+          const allowedExtensions = ["xlsx", "xls"];
+          const extension = file.name.split(".").pop().toLowerCase();
+
+          if (!allowedExtensions.includes(extension)) {
+            alert(
+              "Format file tidak diizinkan. Hanya file Excel (.xlsx, .xls)",
+            );
+            fileInput.value = "";
+            fileName.innerHTML = "<p>Belum ada file dipilih</p>";
+            return;
+          }
+
+          // Tampilkan informasi file
+          fileName.innerHTML = `
+                    <p><strong>File:</strong> ${file.name}</p>
+                    <p><strong>Ukuran:</strong> ${(file.size / 1024).toFixed(2)} KB</p>
+                    <p><strong>Tipe:</strong> ${file.type || "Excel File"}</p>
+                `;
+
+          // Enable upload button
+          uploadBtn.disabled = false;
+        }
+      }
+
+      // Fungsi untuk upload file
+      function uploadFile() {
+        const file = fileInput.files[0];
+        if (!file) {
+          alert("Silakan pilih file terlebih dahulu");
+          return;
+        }
+
+        // Tampilkan progress bar
+        uploadProgress.style.width = "0%";
+        uploadStatus.innerHTML =
+          '<p><i class="fas fa-spinner fa-spin"></i> Mengupload file...</p>';
+        uploadBtn.disabled = true;
+        uploadBtn.innerHTML =
+          '<i class="fas fa-spinner fa-spin"></i> Uploading...';
+
+        // Simulasi progress bar
+        let progress = 0;
+        const progressInterval = setInterval(() => {
+          progress += 5;
+          uploadProgress.style.width = progress + "%";
+
+          if (progress >= 90) {
+            clearInterval(progressInterval);
+          }
+        }, 100);
+
+        // Buat FormData
+        const formData = new FormData();
+        formData.append("excel_file", file);
+
+        // Kirim file ke server
+        fetch("/upload", {
+          method: "POST",
+          body: formData,
+        })
+          .then((response) => response.json())
+          .then((data) => {
+            clearInterval(progressInterval);
+            uploadProgress.style.width = "100%";
+
+            if (data.success) {
+              uploadStatus.innerHTML = `
+                        <div class="success-message">
+                            <i class="fas fa-check-circle"></i> ${data.message}
+                            <p><strong>Total Tower:</strong> ${data.total_towers}</p>
+                            <p><strong>Status Data:</strong></p>
+                            <ul>
+                                <li>Sudah benar (≤14m): ${data.benar_diambil}</li>
+                                <li>Sudah salah (>14m): ${data.salah_diambil}</li>
+                                <li>Belum dihitung: ${data.belum_diambil}</li>
+                            </ul>
+                            <p>Redirect ke dashboard dalam 5 detik...</p>
+                        </div>
+                    `;
+
+              // Update info file saat ini
+              updateCurrentFileInfo();
+
+              // Redirect ke dashboard setelah 5 detik
+              setTimeout(() => {
+                window.location.href = "/";
+              }, 5000);
+            } else {
+              uploadStatus.innerHTML = `
+                        <div class="error-message">
+                            <i class="fas fa-exclamation-circle"></i> ${data.error || "Upload gagal"}
+                        </div>
+                    `;
+              uploadBtn.disabled = false;
+              uploadBtn.innerHTML = '<i class="fas fa-upload"></i> Upload File';
+            }
+          })
+          .catch((error) => {
+            clearInterval(progressInterval);
+            uploadStatus.innerHTML = `
+                    <div class="error-message">
+                        <i class="fas fa-exclamation-circle"></i> Error: ${error.message}
+                    </div>
+                `;
+            uploadBtn.disabled = false;
+            uploadBtn.innerHTML = '<i class="fas fa-upload"></i> Upload File';
+          });
+      }
+
+      // Fungsi untuk download template
+      function downloadTemplate() {
+        window.location.href = "/download-template";
+      }
+
+      // Fungsi untuk update info file saat ini
+      function updateCurrentFileInfo() {
+        fetch("/api/current-file-info")
+          .then((response) => response.json())
+          .then((data) => {
+            const currentFileInfo = document.getElementById("currentFileInfo");
+
+            if (data.exists) {
+              const date = new Date(data.modified * 1000);
+              const dateStr = date.toLocaleDateString("id-ID", {
+                day: "2-digit",
+                month: "2-digit",
+                year: "numeric",
+                hour: "2-digit",
+                minute: "2-digit",
+              });
+
+              const sizeKB = (data.size / 1024).toFixed(2);
+
+              currentFileInfo.innerHTML = `
+                        <h4><i class="fas fa-file-excel"></i> File Saat Ini</h4>
+                        <p><strong>File:</strong> ${data.filename}</p>
+                        <p><strong>Ukuran:</strong> ${sizeKB} KB</p>
+                        <p><strong>Terakhir diubah:</strong> ${dateStr}</p>
+                    `;
+            }
+          });
+      }
+
+      // Load data saat halaman dimuat
+      document.addEventListener("DOMContentLoaded", function () {
+        loadBackupList();
+        updateCurrentFileInfo();
+      });
+    </script>
+  </body>
+</html>

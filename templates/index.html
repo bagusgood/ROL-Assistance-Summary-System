@@ -1,0 +1,1042 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Base Station Tower Verificator</title>
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+    />
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='style.css') }}"
+    />
+    <style>
+      .leaflet-container {
+        height: 600px;
+        width: 100%;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <header>
+        <h1><i class="fas fa-satellite-dish"></i> Base Station Tower Verificator</h1>
+        <p class="subtitle">
+          Verifikasi Kesalahan Koordinat BTS
+        </p>
+      </header>
+
+      <!-- Statistik Panel -->
+      <div class="stats-panel">
+        <div class="stats-grid">
+          <div class="stat-card total">
+            <div class="stat-icon">
+              <i class="fas fa-tower-cell"></i>
+            </div>
+            <div class="stat-content">
+              <h3>Total Tower</h3>
+              <p class="stat-value">{{ total_towers }}</p>
+            </div>
+          </div>
+
+          <div class="stat-card benar">
+            <div class="stat-icon">
+              <i class="fas fa-check-circle"></i>
+            </div>
+            <div class="stat-content">
+              <h3>Data Benar (≤14m)</h3>
+              <p class="stat-value">
+                {{ benar_diambil }} ({{
+                "%.1f"|format(benar_diambil/total_towers*100) }}%)
+              </p>
+            </div>
+          </div>
+
+          <div class="stat-card salah">
+            <div class="stat-icon">
+              <i class="fas fa-times-circle"></i>
+            </div>
+            <div class="stat-content">
+              <h3>Data Salah (>14m)</h3>
+              <p class="stat-value">
+                {{ salah_diambil }} ({{
+                "%.1f"|format(salah_diambil/total_towers*100) }}%)
+              </p>
+            </div>
+          </div>
+
+          <div class="stat-card belum">
+            <div class="stat-icon">
+              <i class="fas fa-question-circle"></i>
+            </div>
+            <div class="stat-content">
+              <h3>Belum Dihitung</h3>
+              <p class="stat-value">
+                {{ belum_diambil }} ({{
+                "%.1f"|format(belum_diambil/total_towers*100) }}%)
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="controls">
+        <div class="search-box">
+          <input
+            type="text"
+            id="searchInput"
+            placeholder="Cari tower berdasarkan nama atau provider..."
+          />
+          <button onclick="searchTowers()">
+            <i class="fas fa-search"></i> Cari
+          </button>
+        </div>
+
+        <div class="filters">
+          <select id="clusterFilter" onchange="filterTowers()">
+            <option value="">Semua Cluster</option>
+            {% for cluster in clusters %}
+            <option value="{{ cluster }}">Cluster {{ cluster }}</option>
+            {% endfor %}
+          </select>
+
+          <select id="providerFilter" onchange="filterTowers()">
+            <option value="">Semua Provider</option>
+            {% for provider in providers %}
+            <option value="{{ provider }}">{{ provider }}</option>
+            {% endfor %}
+          </select>
+
+          <select id="statusFilter" onchange="filterTowers()">
+            <option value="">Semua Status</option>
+            <option value="benar">Data Benar (≤14m)</option>
+            <option value="salah">Data Salah (>14m)</option>
+            <option value="belum">Belum Dihitung</option>
+          </select>
+
+          <button onclick="resetFilters()">
+            <i class="fas fa-redo"></i> Reset
+          </button>
+        </div>
+      </div>
+
+      <div class="content">
+        <div class="sidebar" style="background: #003c69">
+          <h3><i class="fas fa-list"></i> Daftar Tower</h3>
+          <div style="background: #003c69; padding: 0.5rem 0.5rem 0 0.5rem">
+            <a
+              href="/upload"
+              style="
+                display: block;
+                text-align: center;
+                padding: 0.5rem;
+                background: #4299e1;
+                color: white;
+                border-radius: 4px;
+                text-decoration: none;
+                margin-bottom: 0.5rem;
+              "
+            >
+              <i class="fas fa-upload"></i> Upload Data Baru
+            </a>
+          </div>
+          <div style="background: #003c69; padding: 0 0.5rem 0.5rem 0.5rem">
+            <a
+              href="/download-excel"
+              style="
+                display: block;
+                text-align: center;
+                padding: 0.5rem;
+                background: #4299e1;
+                color: white;
+                border-radius: 4px;
+                text-decoration: none;
+                margin-bottom: 0.5rem;
+              "
+            >
+              <i class="fas fa-download"></i> Export Excel
+            </a>
+          </div>
+          <div class="status-tabs">
+            <button class="status-tab active" onclick="filterByStatus('all')">
+              Semua
+            </button>
+            <button class="status-tab" onclick="filterByStatus('benar')">
+              <span class="status-dot benar"></span> Benar
+            </button>
+            <button class="status-tab" onclick="filterByStatus('salah')">
+              <span class="status-dot salah"></span> Salah
+            </button>
+            <button class="status-tab" onclick="filterByStatus('belum')">
+              <span class="status-dot belum"></span> Belum
+            </button>
+          </div>
+          <div id="towerList" class="tower-list">
+            <!-- Daftar tower akan dimuat di sini -->
+          </div>
+        </div>
+
+        <div class="map-container">
+          <div id="map"></div>
+        </div>
+      </div>
+
+      <div class="result-panel" id="resultPanel">
+        <h3><i class="fas fa-calculator"></i> Hasil Perhitungan Error</h3>
+        <div id="errorResult">
+          <p class="placeholder">
+            Pilih tower dan klik posisi sebenarnya di peta untuk menghitung
+            error
+          </p>
+        </div>
+      </div>
+
+      <footer>
+        <p>Base Station Tower Verificator | Balai Monitor SFR Kelas II MATARAM</p>
+      </footer>
+    </div>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <!-- Leaflet Esri Plugin -->
+    <script src="https://unpkg.com/esri-leaflet@3.0.10/dist/esri-leaflet.js"></script>
+    <script src="https://unpkg.com/esri-leaflet-vector@4.0.0/dist/esri-leaflet-vector.js"></script>
+
+    <script>
+                        // Inisialisasi peta
+                        var map = L.map('map').setView([-8.5, 118.7], 13);
+
+                        // Tambahkan tile layer Esri World Imagery
+                        L.esri.Vector.vectorBasemapLayer('ArcGIS:Imagery:Standard', {
+                            apikey: 'YOUR_API_KEY' // Opsional: jika perlu API key
+                        }).addTo(map);
+
+                        // Tambahkan juga OpenStreetMap sebagai alternatif
+                        L.tileLayer('https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
+                            maxZoom: 22,
+                            subdomains: ["mt0", "mt1", "mt2", "mt3"],
+                            attribution: '© OpenStreetMap contributors'
+                        }).addTo(map);
+
+                        // Layer untuk marker tower
+                        var towerMarkers = L.layerGroup().addTo(map);
+
+                        // Layer untuk marker posisi sebenarnya
+                        var actualPositionMarker = L.layerGroup().addTo(map);
+
+                        // Layer untuk garis error
+                        var errorLine = L.layerGroup().addTo(map);
+
+                        // Variabel global untuk tower yang dipilih
+                        var selectedTower = null;
+
+                        // Load data tower dari Flask
+                        var towersData = {{ geojson_data|safe }};
+                        var towers = {};
+
+                         // Fungsi untuk mendapatkan warna berdasarkan status data
+                          function getStatusColor(status) {
+                                switch(status) {
+                                    case 'benar': return '#10b981';    // Hijau
+                                    case 'salah': return '#ef4444';    // Merah
+                                    case 'belum': return '#f59e0b';    // Kuning
+                                    default: return '#9ca3af';         // Abu-abu
+                                }
+                            }
+
+                        // Fungsi untuk membuat icon marker berdasarkan status
+                          function createTowerIcon(status) {
+                              var color = getStatusColor(status);
+                              return L.divIcon({
+                                  className: 'tower-marker',
+                                  html: `<div style="
+                                      background-color: ${color};
+                                      width: 20px;
+                                      height: 20px;
+                                      border-radius: 50%;
+                                      border: 2px solid white;
+                                      box-shadow: 0 0 5px rgba(0,0,0,0.5);
+                                      cursor: pointer;
+                                  "></div>`,
+                                  iconSize: [24, 24],
+                                  iconAnchor: [12, 12]
+                              });
+                          }
+
+                        // Fungsi untuk menampilkan semua tower di peta
+      function displayTowers() {
+          towerMarkers.clearLayers();
+
+          towersData.features.forEach(function(feature) {
+              var tower = feature.properties;
+              var coords = feature.geometry.coordinates;
+
+              // Simpan ke dictionary
+              towers[tower.id] = tower;
+
+              // Skip jika tidak ada koordinat
+              if (!coords || coords[1] === null || coords[0] === null) {
+                  console.log(`Tower ${tower.name} tidak memiliki koordinat`);
+                  return;
+              }
+
+              // Tentukan warna berdasarkan status
+              var color = getStatusColor(tower.status);
+              var iconSize = tower.has_coords ? '20px' : '15px';
+              var opacity = tower.has_coords ? '1' : '0.7';
+
+              // Buat marker
+              var marker = L.marker([coords[1], coords[0]], {
+                  icon: L.divIcon({
+                      className: 'tower-marker',
+                      html: `<div style="
+                          background-color: ${color};
+                          width: ${iconSize};
+                          height: ${iconSize};
+                          border-radius: 50%;
+                          border: 2px solid white;
+                          box-shadow: 0 0 5px rgba(0,0,0,0.5);
+                          cursor: pointer;
+                          opacity: ${opacity};
+                      " title="${tower.name}"></div>`,
+                      iconSize: [24, 24],
+                      iconAnchor: [12, 12]
+                  })
+              }).addTo(towerMarkers);
+
+              // Tambahkan popup
+              var statusText = '';
+              var statusIcon = '';
+              var statusColor = '';
+
+              switch(tower.status) {
+                    case 'benar':
+                        statusText = 'Data sudah benar (≤14m)';
+                        statusIcon = '<i class="fas fa-check-circle"></i>';
+                        statusColor = '#10b981';
+                        break;
+                    case 'salah':
+                        statusText = 'Data masih salah (>14m)';
+                        statusIcon = '<i class="fas fa-times-circle"></i>';
+                        statusColor = '#ef4444';
+                        break;
+                    case 'belum':
+                        statusText = 'Data belum dihitung';
+                        statusIcon = '<i class="fas fa-question-circle"></i>';
+                        statusColor = '#f59e0b';
+                        break;
+                }
+
+              var coordInfo = tower.has_coords ?
+                  `<p><strong>Koordinat Aktual:</strong> Tersedia</p>` :
+                  `<p><strong>Koordinat Aktual:</strong> <span style="color: orange;">Menggunakan koordinat resmi</span></p>`;
+
+              var errorInfo = '';
+              if (tower.error_m !== null && tower.error_m !== undefined) {
+                    errorInfo = `<p><strong>Error:</strong> ${parseFloat(tower.error_m).toFixed(2)} m</p>`;
+                }
+
+              if (tower.status === 'benar' && tower.dist_error !== null && tower.dist_error !== undefined) {
+                  try {
+                      var errorValue = parseFloat(tower.dist_error);
+                      if (!isNaN(errorValue)) {
+                          errorInfo = `<p><strong>Error Terukur:</strong> ${errorValue.toFixed(2)} m</p>`;
+                      }
+                  } catch (e) {
+                      console.log('Error parsing dist_error:', e);
+                  }
+              }
+
+              marker.bindPopup(`
+                  <div class="popup-content">
+                      <h4>${tower.name}</h4>
+                      <p><strong>Provider:</strong> ${tower.provider}</p>
+                      <p><strong>Cluster:</strong> ${tower.cluster}</p>
+                      <p><strong>Status Data:</strong>
+                            <span style="color: ${statusColor};">${statusIcon} ${statusText}</span>
+                        </p>
+                      ${coordInfo}
+                      ${errorInfo}
+                      <button onclick="selectTower(${tower.id})" class="select-btn">
+                          <i class="fas fa-crosshairs"></i> Pilih Tower
+                      </button>
+                  </div>
+              `);
+
+              // Event untuk marker
+              marker.on('click', function() {
+                  selectTower(tower.id);
+              });
+          });
+
+          console.log(`Total markers displayed: ${towerMarkers.getLayers().length}`);
+          console.log(`Total towers in data: ${towersData.features.length}`);
+
+          // Update daftar tower
+          updateTowerList();
+          updateLegend();
+      }
+
+                        // Fungsi untuk memilih tower
+                        function selectTower(towerId) {
+                            selectedTower = towers[towerId];
+                            console.log(selectedTower)
+
+                            // Focus ke tower di peta
+                            var coords = getTowerCoords(towerId);
+                            if (coords) {
+                                map.setView(coords, 20);
+                            }
+
+                            // Update UI
+                            updateSelectedTowerUI();
+
+                            // Reset markers
+                            actualPositionMarker.clearLayers();
+                            errorLine.clearLayers();
+
+                            // Tampilkan pesan
+                            var statusIcon = ''
+                            if (selectedTower.status === "benar") {
+                                statusIcon = '<i class="fas fa-check-circle" style="color: #10b981;"></i>'
+                            } else if (selectedTower.status === "salah") {
+                                statusIcon = '<i class="fas fa-times-circle" style="color: #ef4444;"></i>';
+                            } else {
+                                statusIcon = '<i class="fas fa-times-circle" style="color: #f59e0b;"></i>';
+                            }
+
+                            var statusText = ''
+                            if (selectedTower.status === "benar") {
+                                statusText = 'Data Benar (≤ 14m)'
+                            } else if (selectedTower.status === "salah") {
+                                statusText = 'Data Salah (> 14m)';
+                            } else {
+                                statusText = 'Data Belum Dihitung';
+                            }
+
+                            if(selectedTower.status === "benar") {
+                                document.getElementById('errorResult').innerHTML = `
+                                    <div class="info-message">
+                                        <h4>${statusIcon} Data Benar (≤ 14m)</h4>
+                                        <h4>${selectedTower.name}</h4> <br>
+                                        <p><strong>Provider:</strong> ${selectedTower.provider}</p>
+                                        <p><strong>Cluster:</strong> ${selectedTower.cluster}</p>
+                                        <p><strong>Error:</strong> ${selectedTower.error_m.toFixed(2)} m</p>
+                                    </div>
+                                `;
+                            } else if (selectedTower.status === "salah") {
+                                document.getElementById('errorResult').innerHTML = `
+                                    <div class="info-message">
+                                        <h4>${statusIcon} Data Salah (> 14m)</h4>
+                                        <h4>${selectedTower.name}</h4> <br>
+                                        <p><strong>Provider:</strong> ${selectedTower.provider}</p>
+                                        <p><strong>Cluster:</strong> ${selectedTower.cluster}</p>
+                                        <p><strong>Error:</strong> ${selectedTower.error_m.toFixed(2)} m</p>
+                                    </div>
+                                `;
+                            } else {
+                                document.getElementById('errorResult').innerHTML = `
+                                      <div class="result-header">
+                                          ${statusIcon} Tower <strong>${selectedTower.name}</strong> - ${statusText}
+                                      </div>
+                                      <p class="info-message">
+                                          Silakan klik posisi sebenarnya di peta untuk menghitung error.
+                                      </p>
+                                  `;
+                            }
+
+                        }
+
+                        // Fungsi untuk mendapatkan koordinat tower
+                        function getTowerCoords(towerId) {
+                            for (var i = 0; i < towersData.features.length; i++) {
+                                if (towersData.features[i].properties.id == towerId) {
+                                    var coords = towersData.features[i].geometry.coordinates;
+                                    return [coords[1], coords[0]];
+                                }
+                            }
+                            return null;
+                        }
+
+                        // Fungsi untuk update UI tower yang dipilih
+                        function updateSelectedTowerUI() {
+                              // Highlight di daftar
+                              var items = document.querySelectorAll('.tower-item');
+                              items.forEach(function(item) {
+                                  item.classList.remove('selected');
+                                  if (parseInt(item.dataset.id) === selectedTower.id) {
+                                      item.classList.add('selected');
+                                      // Scroll ke item yang dipilih
+                                      item.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                                  }
+                              });
+
+                              // Update tab status aktif
+                              updateStatusTabs();
+                          }
+
+                        // Fungsi untuk update daftar tower
+                          function updateTowerList() {
+                              var container = document.getElementById('towerList');
+                              container.innerHTML = '';
+
+                              towersData.features.forEach(function(feature) {
+                                  var tower = feature.properties;
+
+                                  var item = document.createElement('div');
+                                  item.className = 'tower-item';
+                                  item.dataset.id = tower.id;
+                                  item.dataset.status = tower.status;
+
+                                  var statusIcon = '';
+                                  switch(tower.status) {
+                                        case 'benar':
+                                            statusIcon = '<i class="fas fa-check-circle status-icon benar"></i>';
+                                            break;
+                                        case 'salah':
+                                            statusIcon = '<i class="fas fa-times-circle status-icon salah"></i>';
+                                            break;
+                                        case 'belum':
+                                            statusIcon = '<i class="fas fa-question-circle status-icon belum"></i>';
+                                            break;
+                                    }
+
+                                  var errorInfo = '';
+                                  if (tower.error_m !== null && tower.error_m !== undefined) {
+                                        errorInfo = `<p><i class="fas fa-ruler"></i> Error: ${parseFloat(tower.error_m).toFixed(2)} m</p>`;
+                                    }
+
+                                  if (tower.status === 'benar' && tower.dist_error) {
+                                      errorInfo = `<p><i class="fas fa-ruler"></i> Error: ${parseFloat(tower.dist_error).toFixed(2)} m</p>`;
+                                  }
+
+                                  item.innerHTML = `
+                                      <div class="tower-info">
+                                          <div class="tower-header">
+                                              <h5>${tower.name}</h5>
+                                              ${statusIcon}
+                                          </div>
+                                          <p><i class="fas fa-building"></i> ${tower.provider}</p>
+                                          <p><i class="fas fa-layer-group"></i> Cluster ${tower.cluster}</p>
+                                          ${errorInfo}
+                                      </div>
+                                      <button onclick="selectTower(${tower.id})" class="select-btn">
+                                          <i class="fas fa-eye"></i>
+                                      </button>
+                                  `;
+
+                                  item.onclick = function(e) {
+                                      if (!e.target.closest('.select-btn')) {
+                                          selectTower(tower.id);
+                                      }
+                                  };
+
+                                  container.appendChild(item);
+                              });
+
+                              // Update tab status
+                              updateStatusCounts();
+                          }
+
+                          // Fungsi untuk update jumlah tower per status
+                          function updateStatusCounts() {
+                              var semua = document.querySelectorAll('.tower-item').length;
+                              var benar = document.querySelectorAll('.tower-item[data-status="benar"]').length;
+                              var salah = document.querySelectorAll('.tower-item[data-status="salah"]').length;
+                              var belum = document.querySelectorAll('.tower-item[data-status="belum"]').length;
+
+                              // Update teks tombol jika perlu
+                              document.querySelector('.status-tab[onclick*="all"]').innerHTML = `Semua (${semua})`;
+                              document.querySelector('.status-tab[onclick*="benar"]').innerHTML =
+                              `<span class="status-dot benar"></span> Benar (${benar})`;
+                              document.querySelector('.status-tab[onclick*="salah"]').innerHTML =
+                              `<span class="status-dot salah"></span> Salah (${salah})`;
+                              document.querySelector('.status-tab[onclick*="belum"]').innerHTML =
+                              `<span class="status-dot belum"></span> Belum (${belum})`;
+                          }
+
+                          // Fungsi untuk filter berdasarkan status
+                          function filterByStatus(status) {
+                              var items = document.querySelectorAll('.tower-item');
+                              var tabs = document.querySelectorAll('.status-tab');
+
+                              // Update active tab
+                              tabs.forEach(function(tab) {
+                                  tab.classList.remove('active');
+                              });
+
+                              if (status === 'all') {
+                                  items.forEach(function(item) {
+                                      item.style.display = 'flex';
+                                  });
+                                  document.querySelector('.status-tab[onclick*="all"]').classList.add('active');
+                              } else if (status === 'benar') {
+                                  items.forEach(function(item) {
+                                      item.style.display = item.dataset.status === 'benar' ? 'flex' : 'none';
+                                  });
+                                  document.querySelector('.status-tab[onclick*="benar"]').classList.add('active');
+                              } else if (status === 'salah') {
+                                  items.forEach(function(item) {
+                                      item.style.display = item.dataset.status === 'salah' ? 'flex' : 'none';
+                                  });
+                                  document.querySelector('.status-tab[onclick*="salah"]').classList.add('active');
+                              } else if (status === "belum") {
+                                items.forEach(function(item) {
+                                      item.style.display = item.dataset.status === 'belum' ? 'flex' : 'none';
+                                  });
+                                  document.querySelector('.status-tab[onclick*="belum"]').classList.add('active');
+                              }
+
+                              // Update dropdown filter
+                              document.getElementById('statusFilter').value = status === 'all' ? '' : status;
+                          }
+
+                          // Fungsi untuk update status tabs
+                          function updateStatusTabs() {
+                              if (selectedTower) {
+                                  var currentStatus = selectedTower.status;
+                                  filterByStatus(currentStatus);
+                              }
+                          }
+
+                        // Fungsi untuk mencari tower
+                          function searchTowers() {
+                              var query = document.getElementById('searchInput').value.toLowerCase();
+                              var items = document.querySelectorAll('.tower-item');
+                              var found = false;
+
+                              items.forEach(function(item) {
+                                  var text = item.textContent.toLowerCase();
+                                  if (text.includes(query)) {
+                                      item.style.display = 'flex';
+                                      found = true;
+                                  } else {
+                                      item.style.display = 'none';
+                                  }
+                              });
+
+                              if (!found && query) {
+                                  alert('Tidak ditemukan tower dengan kata kunci: ' + query);
+                              }
+                          }
+
+                        // Fungsi untuk filter tower
+                          function filterTowers() {
+                              var cluster = document.getElementById('clusterFilter').value;
+                              var provider = document.getElementById('providerFilter').value;
+                              var status = document.getElementById('statusFilter').value;
+                              var items = document.querySelectorAll('.tower-item');
+
+                              items.forEach(function(item) {
+                                  var towerId = parseInt(item.dataset.id);
+                                  var tower = towers[towerId];
+                                  var show = true;
+
+                                  if (cluster && tower.cluster != parseInt(cluster)) {
+                                      show = false;
+                                  }
+
+                                  if (provider && tower.provider !== provider) {
+                                      show = false;
+                                  }
+
+                                  if (status && tower.status !== status) {
+                                      show = false;
+                                  }
+
+                                  item.style.display = show ? 'flex' : 'none';
+                              });
+                          }
+
+                        // Fungsi untuk reset filter
+                          function resetFilters() {
+                              document.getElementById('searchInput').value = '';
+                              document.getElementById('clusterFilter').value = '';
+                              document.getElementById('providerFilter').value = '';
+                              document.getElementById('statusFilter').value = '';
+
+                              var items = document.querySelectorAll('.tower-item');
+                              items.forEach(function(item) {
+                                  item.style.display = 'flex';
+                              });
+
+                              filterByStatus('all');
+                          }
+
+                        map.on('click', function(e) {
+                      if (!selectedTower) {
+                          alert('Silakan pilih tower terlebih dahulu dari daftar atau klik marker di peta');
+                          return;
+                      }
+
+                      var clickedLat = e.latlng.lat;
+                      var clickedLng = e.latlng.lng;
+
+                      // Hapus marker sebelumnya
+                      actualPositionMarker.clearLayers();
+                      errorLine.clearLayers();
+
+                      // Tambahkan marker posisi sebenarnya (warna hijau cerah)
+                      var actualMarker = L.marker([clickedLat, clickedLng], {
+                          icon: L.divIcon({
+                              className: 'actual-marker',
+                              html: '<div style="background-color: #00ff00; width: 15px; height: 15px; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 5px rgba(0,0,0,0.5);"></div>',
+                              iconSize: [19, 19],
+                              iconAnchor: [9, 9]
+                          })
+                      }).addTo(actualPositionMarker);
+
+                      actualMarker.bindPopup('<strong>Posisi Sebenarnya</strong><br>Koordinat yang Anda klik');
+
+                      // Dapatkan koordinat resmi tower
+                      var towerCoords = getTowerCoords(selectedTower.id);
+                      if (towerCoords) {
+                          // Tambahkan garis error (garis putus-putus merah)
+                          var line = L.polyline([towerCoords, [clickedLat, clickedLng]], {
+                              color: 'red',
+                              weight: 2,
+                              dashArray: '5, 5',
+                              opacity: 0.7
+                          }).addTo(errorLine);
+
+                          // Tambahkan popup di tengah garis
+                          var midPoint = L.latLng(
+                              (towerCoords[0] + clickedLat) / 2,
+                              (towerCoords[1] + clickedLng) / 2
+                          );
+
+                          // Hitung jarak
+                          var distance = calculateDistance(
+                              towerCoords[0], towerCoords[1],
+                              clickedLat, clickedLng
+                          );
+
+                          // Buat custom marker untuk distance
+                          var distanceMarker = L.marker(midPoint, {
+                              icon: L.divIcon({
+                                  className: 'distance-marker',
+                                  html: `<div style="
+                                      background: white;
+                                      color: red;
+                                      padding: 2px 6px;
+                                      border-radius: 10px;
+                                      border: 1px solid red;
+                                      font-weight: bold;
+                                      font-size: 12px;
+                                  ">${distance.toFixed(1)}m</div>`,
+                                  iconSize: [60, 20],
+                                  iconAnchor: [30, 10]
+                              })
+                          }).addTo(errorLine);
+
+                          // Update hasil dengan tombol SIMPAN
+                          var statusInfo = ""
+                            if(selectedTower.status === "benar") {
+                                statusInfo = `<p><strong>Status Data:</strong> <span style="color: #10b981;">Data Sudah Benar</span></p>`
+                            } else if (selectedTower.status === "salah") {
+                                statusInfo = `<p><strong>Status Data:</strong> <span style="color: #ef4444;">Data Masih Salah</span></p>`
+                            } else {
+                                statusInfo = `<p><strong>Status Data:</strong> <span style="color: #f59e0b;">Data Belum diambil</span></p>`
+                            }
+
+                          var existingError = '';
+                          if (selectedTower.status === 'benar' && selectedTower.dist_error !== null && selectedTower.dist_error !== undefined) {
+                              try {
+                                  var errorValue = parseFloat(selectedTower.dist_error);
+                                  if (!isNaN(errorValue)) {
+                                      existingError = `
+                                          <div class="result-item">
+                                              <h5><i class="fas fa-database"></i> Error Terdata</h5>
+                                              <p>${errorValue.toFixed(2)} meter</p>
+                                          </div>
+                                      `;
+                                  }
+                              } catch (e) {
+                                  console.log('Error parsing existing error:', e);
+                              }
+                          }
+
+                          document.getElementById('errorResult').innerHTML = `
+                              <div class="result-content">
+                                  <h4>${selectedTower.name}</h4>
+                                  ${statusInfo}
+                                  <div class="result-grid">
+                                      <div class="result-item">
+                                          <h5><i class="fas fa-satellite"></i> Koordinat Tower</h5>
+                                          <p>Lat: ${towerCoords[0].toFixed(6)}</p>
+                                          <p>Lng: ${towerCoords[1].toFixed(6)}</p>
+                                      </div>
+                                      <div class="result-item">
+                                          <h5><i class="fas fa-map-marker-alt"></i> Posisi Sebenarnya</h5>
+                                          <p>Lat: ${clickedLat.toFixed(6)}</p>
+                                          <p>Lng: ${clickedLng.toFixed(6)}</p>
+                                      </div>
+                                      ${existingError}
+                                      <div class="result-item highlight">
+                                          <h5><i class="fas fa-ruler"></i> Error Distance (Baru)</h5>
+                                          <p class="error-value">${distance.toFixed(2)} meter</p>
+                                          <p>${(distance/1000).toFixed(3)} kilometer</p>
+                                      </div>
+                                  </div>
+                                  <div class="result-actions">
+                                      <button onclick="saveMeasurement(${selectedTower.id}, ${distance}, ${clickedLat}, ${clickedLng})" class="save-btn" id="saveBtn">
+                                          <i class="fas fa-save"></i> SIMPAN PENGUKURAN
+                                      </button>
+                                      <button onclick="selectTower(${selectedTower.id})" class="reset-btn">
+                                          <i class="fas fa-redo"></i> Hitung Ulang
+                                      </button>
+                                  </div>
+                                  <div id="saveStatus"></div>
+                              </div>
+                          `;
+                      }
+                  });
+
+                  // Fungsi untuk menyimpan pengukuran ke server
+            function saveMeasurement(towerId, distance, measuredLat, measuredLng) {
+                var saveBtn = document.getElementById('saveBtn');
+                var saveStatus = document.getElementById('saveStatus');
+
+                // Disable button selama proses
+                saveBtn.disabled = true;
+                saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Menyimpan...';
+
+                // Kirim data ke server
+                fetch('/api/update-tower', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        tower_id: towerId,
+                        measured_error: distance,
+                        measured_lat: measuredLat,
+                        measured_lng: measuredLng
+                    })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        // Update status di UI
+                        saveStatus.innerHTML = `
+                            <div class="success-message">
+                                <i class="fas fa-check-circle"></i> Data berhasil disimpan!
+                                <p>Status tower akan berubah menjadi "sudah diambil".</p>
+                            </div>
+                        `;
+
+                        // Update status tower di memori
+                        if (towers[towerId]) {
+                            towers[towerId].status = 'benar';
+                            towers[towerId].dist_error = distance;
+                        }
+
+                        // Refresh data setelah 2 detik
+                        setTimeout(function() {
+                            location.reload();
+                        }, 2000);
+
+                    } else {
+                        saveStatus.innerHTML = `
+                            <div class="error-message">
+                                <i class="fas fa-exclamation-circle"></i> Gagal menyimpan: ${data.error || 'Unknown error'}
+                            </div>
+                        `;
+                        saveBtn.disabled = false;
+                        saveBtn.innerHTML = '<i class="fas fa-save"></i> SIMPAN PENGUKURAN';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    saveStatus.innerHTML = `
+                        <div class="error-message">
+                            <i class="fas fa-exclamation-circle"></i> Error: ${error.message}
+                        </div>
+                    `;
+                    saveBtn.disabled = false;
+                    saveBtn.innerHTML = '<i class="fas fa-save"></i> SIMPAN PENGUKURAN';
+                });
+                updateStatusCounts()
+            }
+
+                        // Fungsi untuk menghitung jarak (Haversine formula)
+                        function calculateDistance(lat1, lon1, lat2, lon2) {
+                            var R = 6371000; // Radius bumi dalam meter
+                            var dLat = (lat2 - lat1) * Math.PI / 180;
+                            var dLon = (lon2 - lon1) * Math.PI / 180;
+                            var a =
+                                Math.sin(dLat/2) * Math.sin(dLat/2) +
+                                Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                                Math.sin(dLon/2) * Math.sin(dLon/2);
+                            var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+                            return R * c;
+                        }
+
+                        // Fungsi untuk menyimpan hasil
+                        function saveResult() {
+                            var resultContent = document.getElementById('errorResult').innerText;
+                            var blob = new Blob([resultContent], {type: 'text/plain'});
+                            var url = window.URL.createObjectURL(blob);
+                            var a = document.createElement('a');
+                            a.href = url;
+                            a.download = 'error_result_' + selectedTower.name + '.txt';
+                            a.click();
+                            window.URL.revokeObjectURL(url);
+
+                            alert('Hasil telah disimpan!');
+                        }
+
+                        // Inisialisasi saat halaman dimuat
+                          document.addEventListener('DOMContentLoaded', function() {
+                              displayTowers();
+
+                              // Tambahkan kontrol layer
+                              L.control.layers({
+                                  "Esri Imagery": L.esri.Vector.vectorBasemapLayer('ArcGIS:Imagery:Standard'),
+                                  "OpenStreetMap": L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png')
+                              }, {
+                                  "Tower Markers": towerMarkers,
+                                  "Actual Position": actualPositionMarker,
+                                  "Error Line": errorLine
+                              }).addTo(map);
+                          });
+
+                          // Fungsi untuk memulai download Excel
+                    function startDownloadExcel() {
+                        // Tampilkan status loading
+                        var resultPanel = document.getElementById('errorResult');
+                        var originalContent = resultPanel.innerHTML;
+                        resultPanel.innerHTML = `
+                            <div class="export-loading" style="text-align: center; padding: 2rem;">
+                                <div style="font-size: 3rem; color: #4299e1; margin-bottom: 1rem;">
+                                    <i class="fas fa-spinner fa-spin"></i>
+                                </div>
+                                <h4 style="color: #003c69; margin-bottom: 0.5rem;">Mempersiapkan File Excel...</h4>
+                                <p style="color: #4a5568;">File sedang dipersiapkan untuk di-download.</p>
+                            </div>
+                        `;
+
+                        var downloadLink = document.createElement('a');
+                        downloadLink.href = '/download-excel';
+                        downloadLink.download = 'hasil_analisis_bts_tower.xlsx';
+                        downloadLink.style.display = 'none';
+
+                        document.body.appendChild(downloadLink);
+                        downloadLink.click();
+                        document.body.removeChild(downloadLink);
+
+                        setTimeout(function() {
+                            resultPanel.innerHTML = originalContent;
+                            var successHtml = `
+                                <div class="export-success" style="text-align: center; padding: 1rem; background: #d4edda; border-radius: 6px; border: 1px solid #c3e6cb; margin-top: 1rem;">
+                                    <p style="color: #155724; display: flex; align-items: center; justify-content: center; gap: 0.5rem;">
+                                        <i class="fas fa-check-circle"></i>
+                                        <strong>File Excel berhasil di-download!</strong>
+                                    </p>
+                                    <p style="color: #155724; margin-top: 0.5rem; font-size: 0.9rem;">
+                                        Cek folder downloads untuk file: <strong>hasil_analisis_bts_tower.xlsx</strong>
+                                    </p>
+                                </div>
+                            `;
+                            resultPanel.insertAdjacentHTML('beforeend', successHtml);
+                            setTimeout(function() {
+                                var successDiv = document.querySelector('.export-success');
+                                if (successDiv) {
+                                    successDiv.remove();
+                                }
+                            }, 5000);
+                        }, 1000);
+                    }
+
+                    function downloadExcelDirect() {
+                        var downloadLink = document.createElement('a');
+                        downloadLink.href = '/download-excel';
+                        downloadLink.download = 'hasil_analisis_bts_tower.xlsx';
+                        downloadLink.style.display = 'none';
+                        document.body.appendChild(downloadLink);
+                        downloadLink.click();
+                        document.body.removeChild(downloadLink);
+                        showDownloadNotification();
+                    }
+
+                    // Fungsi untuk menampilkan notifikasi download
+                    function showDownloadNotification() {
+                        var existingNotification = document.querySelector('.download-notification');
+                        if (existingNotification) {
+                            existingNotification.remove();
+                        }
+
+                        var notification = document.createElement('div');
+                        notification.className = 'download-notification';
+                        notification.innerHTML = `
+                            <div style="
+                                position: fixed;
+                                bottom: 20px;
+                                right: 20px;
+                                background: #48bb78;
+                                color: white;
+                                padding: 1rem;
+                                border-radius: 6px;
+                                box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+                                z-index: 1000;
+                                display: flex;
+                                align-items: center;
+                                gap: 0.5rem;
+                                animation: slideIn 0.3s ease-out;
+                            ">
+                                <i class="fas fa-check-circle"></i>
+                                <div>
+                                    <strong>Download dimulai!</strong>
+                                    <p style="margin: 0; font-size: 0.9rem;">File Excel sedang di-download</p>
+                                </div>
+                            </div>
+                        `;
+                        document.body.appendChild(notification);
+                        setTimeout(function() {
+                            notification.remove();
+                        }, 3000);
+                    }
+
+                    // Tambahkan CSS animation untuk notifikasi
+                      var style = document.createElement('style');
+                      style.textContent = `
+                          @keyframes slideIn {
+                              from {
+                                  transform: translateX(100%);
+                                  opacity: 0;
+                              }
+                              to {
+                                  transform: translateX(0);
+                                  opacity: 1;
+                              }
+                          }
+
+                          @keyframes slideOut {
+                              from {
+                                  transform: translateX(0);
+                                  opacity: 1;
+                              }
+                              to {
+                                  transform: translateX(100%);
+                                  opacity: 0;
+                              }
+                          }
+
+                          .download-notification {
+                              animation: slideIn 0.3s ease-out;
+                          }
+
+                          .download-notification.removing {
+                              animation: slideOut 0.3s ease-out;
+                          }
+                      `;
+                      document.head.appendChild(style);
+    </script>
+  </body>
+</html>
