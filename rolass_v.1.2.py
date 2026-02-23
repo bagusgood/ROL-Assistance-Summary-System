@@ -1142,14 +1142,15 @@ def identifikasi():
 @app.route("/delete_row", methods=["POST"])
 def delete_row():
     data = request.get_json()
-    no = int(data.get("no"))
+    freq = float(data.get("freq"))
 
     df = pd.read_csv("rekap_baru.csv")
 
-    df = df[df["No"] != no]
+    # Hapus berdasarkan frekuensi
+    df = df[df["Frekuensi"] != freq]
 
-    # rebuild nomor
-    df = df.reset_index(drop=True)
+    # rebuild nomor untuk tampilan saja
+    df = df.sort_values("Frekuensi").reset_index(drop=True)
     df["No"] = range(1, len(df) + 1)
 
     df.to_csv("rekap_baru.csv", index=False)
@@ -1814,7 +1815,7 @@ Spectrum Monitoring
 </tr>
 
 {% for r in p.table %}
-<tr id="row-{{ r['No'] }}">
+<tr id="row-{{ r['Frekuensi'] }}">
 {% for k,v in r.items() %}
 <td contenteditable="true"
     data-row="{{ r['No'] }}"
@@ -1826,7 +1827,7 @@ Spectrum Monitoring
 <td>
 <a class="btn-delete"
    href="javascript:void(0);"
-   onclick="deleteRow('{{ r['No'] }}')">
+   onclick="deleteRow('{{ r['Frekuensi'] }}')">
    Hapus
 </a>
 
@@ -1959,30 +1960,27 @@ function saveTable(idx){
 }
 </script>
 <script>
-function deleteRow(no, btn){
+function deleteRow(freq){
 
     if(!confirm("Hapus data ini?")) return;
 
     fetch("/delete_row",{
         method:"POST",
         headers:{ "Content-Type":"application/json" },
-        body: JSON.stringify({ no: no })
+        body: JSON.stringify({ freq: freq })
     })
     .then(r => r.json())
     .then(res => {
 
         if(res.status === "ok"){
-
-            // hapus baris dari tampilan
-            const row = document.getElementById("row-" + no);
-            if(row) row.remove();
-
-        }else{
-            alert("Gagal menghapus data");
+            const row = document.getElementById("row-" + freq);
+            if(row){
+                row.style.transition = "0.3s";
+                row.style.opacity = "0";
+                setTimeout(()=>row.remove(),300);
+            }
         }
-
-    })
-    .catch(() => alert("Server error"));
+    });
 }
 </script>
 </div>
