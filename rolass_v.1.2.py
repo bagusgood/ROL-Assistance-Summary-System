@@ -1139,17 +1139,22 @@ def identifikasi():
 
 
 
-@app.route("/delete/<int:no>")
-def delete_row(no):
+@app.route("/delete_row", methods=["POST"])
+def delete_row():
+    data = request.get_json()
+    no = int(data.get("no"))
+
     df = pd.read_csv("rekap_baru.csv")
 
     df = df[df["No"] != no]
 
-    df = df.sort_values("Frekuensi").reset_index(drop=True)
+    # rebuild nomor
+    df = df.reset_index(drop=True)
     df["No"] = range(1, len(df) + 1)
 
     df.to_csv("rekap_baru.csv", index=False)
-    return redirect(url_for("dashboard"))
+
+    return {"status":"ok"}
 
 @app.route("/add_click", methods=["POST"])
 def add_click():
@@ -1809,7 +1814,7 @@ Spectrum Monitoring
 </tr>
 
 {% for r in p.table %}
-<tr>
+<tr id="row-{{ r['No'] }}">
 {% for k,v in r.items() %}
 <td contenteditable="true"
     data-row="{{ r['No'] }}"
@@ -1820,8 +1825,8 @@ Spectrum Monitoring
 {% endfor %}
 <td>
 <a class="btn-delete"
-   href="/delete/{{ r['No'] }}"
-   onclick="return confirm('Hapus data ini?')">
+   href="javascript:void(0);"
+   onclick="deleteRow('{{ r['No'] }}')">
    Hapus
 </a>
 
@@ -1951,6 +1956,33 @@ function saveTable(idx){
     .catch(err=>{
         alert("Gagal menyimpan data");
     });
+}
+</script>
+<script>
+function deleteRow(no, btn){
+
+    if(!confirm("Hapus data ini?")) return;
+
+    fetch("/delete_row",{
+        method:"POST",
+        headers:{ "Content-Type":"application/json" },
+        body: JSON.stringify({ no: no })
+    })
+    .then(r => r.json())
+    .then(res => {
+
+        if(res.status === "ok"){
+
+            // hapus baris dari tampilan
+            const row = document.getElementById("row-" + no);
+            if(row) row.remove();
+
+        }else{
+            alert("Gagal menghapus data");
+        }
+
+    })
+    .catch(() => alert("Server error"));
 }
 </script>
 </div>
