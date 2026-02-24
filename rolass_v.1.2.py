@@ -1456,6 +1456,7 @@ Data diambil dari <b>Rekapitulasi ROL 2025</b>
 
 
 <!-- ================== LIST DATASET ================== -->
+<!--
 <h3 style="margin-top:40px">📂 Spectrum Tersimpan</h3>
 <ul class="upload-list">
 {% for u in uploads %}
@@ -1466,6 +1467,7 @@ Data diambil dari <b>Rekapitulasi ROL 2025</b>
 <li><i>Belum ada data</i></li>
 {% endfor %}
 </ul>
+-->
 
 </div>
 </div>
