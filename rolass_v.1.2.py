@@ -1063,6 +1063,9 @@ def open_upload(upload_id):
 def identifikasi():
     uploads = load_uploads()
 
+    # Urutkan berdasarkan nama (A-Z)
+    uploads = sorted(uploads, key=lambda x: x["name"].lower())
+
     # ======================================================
     # GET → tampilkan halaman upload
     # ======================================================
