@@ -961,6 +961,7 @@ def render_page():
 
     df_spec = load_spectrum(spectrum_path, file_type)
     df_rekap = pd.read_csv(rekap_path)
+    print(df_rekap.columns.tolist())
 
     DISPLAY_COLS = [
         "No",
