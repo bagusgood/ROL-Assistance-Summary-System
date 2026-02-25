@@ -712,21 +712,36 @@ def load_rekap(path):
     # ===== REBUILD NO =====
     df["No"] = range(1, len(df) + 1)
 
-    df.to_csv(CURRENT_REKAP, index=False)
+    #df.to_csv(CURRENT_REKAP, index=False)
     return df
-
 
 
 def attach_level_from_spectrum(df_rekap, df_spec):
 
-    spec_f = df_spec["Frequency (Hz)"].values
-    spec_l = df_spec["Level (dBµV/m)"].values
+    # Pastikan numeric & clean
+    df_spec["Frequency (Hz)"] = pd.to_numeric(
+        df_spec["Frequency (Hz)"], errors="coerce"
+    )
+    df_spec["Level (dBµV/m)"] = pd.to_numeric(
+        df_spec["Level (dBµV/m)"], errors="coerce"
+    )
 
-    rekap_hz = df_rekap["Frekuensi"].astype(float).values * 1e6
+    df_spec = df_spec.dropna()
+    df_spec = df_spec.sort_values("Frequency (Hz)").reset_index(drop=True)
 
-    idx = np.abs(spec_f[:, None] - rekap_hz).argmin(axis=0)
+    df_rekap["Frekuensi"] = pd.to_numeric(
+        df_rekap["Frekuensi"], errors="coerce"
+    )
 
-    df_rekap["Level (dBµV/m)"] = spec_l[idx]
+    levels = []
+
+    for f_mhz in df_rekap["Frekuensi"]:
+        f_hz = f_mhz * 1e6
+
+        idx = (df_spec["Frequency (Hz)"] - f_hz).abs().idxmin()
+        levels.append(df_spec.loc[idx, "Level (dBµV/m)"])
+
+    df_rekap["Level (dBµV/m)"] = levels
 
     return df_rekap
 
@@ -978,9 +993,16 @@ def render_page():
     # ===============================
     # BUILD LEVEL FROM SPECTRUM
     # ===============================
-    if df_rekap["Level (dBµV/m)"].astype(str).str.strip().eq("").any():
-        df_rekap = attach_level_from_spectrum(df_rekap, df_spec)
-        df_rekap.to_csv(rekap_path, index=False)
+    # SELALU REBUILD LEVEL DARI SPECTRUM
+    # Bersihkan kolom level lama
+    if "Level (dBµV/m)" in df_rekap.columns:
+        df_rekap.drop(columns=["Level (dBµV/m)"], inplace=True)
+    
+    # Hitung ulang level
+    df_rekap = attach_level_from_spectrum(df_rekap, df_spec)
+    
+    # Simpan
+    df_rekap.to_csv(rekap_path, index=False)
 
     # ===============================
     # SORT & REBUILD NO
@@ -1194,7 +1216,7 @@ def add_click():
 
     if mask.any():
         idx = df[mask].index[0]
-        df.loc[idx, "Level (dBµV/m)"] = level
+        #df.loc[idx, "Level (dBµV/m)"] = level
         if "Identifikasi" in df.columns:
             df.loc[idx, "Identifikasi"] = ident
 
