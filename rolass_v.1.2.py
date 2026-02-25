@@ -658,10 +658,6 @@ STATIC_FOLDER = "static"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(STATIC_FOLDER, exist_ok=True)
 
-
-CURRENT_SPECTRUM = None
-CURRENT_REKAP = None
-CURRENT_FILE_TYPE = None
 CURRENT_DATASET_NAME = None
 
 # ======================================================
@@ -716,23 +712,22 @@ def load_rekap(path):
     # ===== REBUILD NO =====
     df["No"] = range(1, len(df) + 1)
 
-    df.to_csv("rekap_baru.csv", index=False)
+    df.to_csv(rekap_path, index=False)
     return df
 
 
 
 def attach_level_from_spectrum(df_rekap, df_spec):
+
     spec_f = df_spec["Frequency (Hz)"].values
     spec_l = df_spec["Level (dBµV/m)"].values
 
-    levels = []
+    rekap_hz = df_rekap["Frekuensi"].astype(float).values * 1e6
 
-    for f_mhz in df_rekap["Frekuensi"].astype(float).values:
-        f_hz = f_mhz * 1e6
-        idx = (abs(spec_f - f_hz)).argmin()
-        levels.append(spec_l[idx])
+    idx = np.abs(spec_f[:, None] - rekap_hz).argmin(axis=0)
 
-    df_rekap["Level (dBµV/m)"] = levels
+    df_rekap["Level (dBµV/m)"] = spec_l[idx]
+
     return df_rekap
 
 
@@ -743,7 +738,6 @@ def attach_level_from_spectrum(df_rekap, df_spec):
 def load_spectrum(filepath, file_type=None):
     import pandas as pd
     import re
-    from io import StringIO
 
     # ==================================================
     # 1. KHUSUS LS TELECOM (RAW EXPORT)
@@ -954,7 +948,19 @@ def load_spectrum(filepath, file_type=None):
 
 
 def render_page():
-    plots = []
+
+    rekap_file = session.get("active_rekap")
+    spectrum_file = session.get("active_spectrum")
+    file_type = session.get("active_type")
+
+    if not rekap_file or not spectrum_file:
+        return redirect(url_for("identifikasi"))
+
+    rekap_path = os.path.join(UPLOAD_FOLDER, rekap_file)
+    spectrum_path = os.path.join(UPLOAD_FOLDER, spectrum_file)
+
+    df_spec = load_spectrum(spectrum_path, file_type)
+    df_rekap = pd.read_csv(rekap_path)
 
     DISPLAY_COLS = [
         "No",
@@ -969,43 +975,41 @@ def render_page():
         "Level (dBµV/m)"
     ]
 
-    df_spec = load_spectrum(CURRENT_SPECTRUM, CURRENT_FILE_TYPE)
-    df_rekap = pd.read_csv("rekap_baru.csv")
-
     # ===============================
     # BUILD LEVEL FROM SPECTRUM
     # ===============================
-    df_rekap = attach_level_from_spectrum(df_rekap, df_spec)
+    if df_rekap["Level (dBµV/m)"].astype(str).str.strip().eq("").any():
+        df_rekap = attach_level_from_spectrum(df_rekap, df_spec)
+        df_rekap.to_csv(rekap_path, index=False)
 
     # ===============================
-    # SORT & REBUILD NO (HZ BASED)
+    # SORT & REBUILD NO
     # ===============================
     df_rekap = df_rekap.sort_values("Frekuensi").reset_index(drop=True)
     df_rekap["No"] = range(1, len(df_rekap) + 1)
-    df_rekap.to_csv("rekap_baru.csv", index=False)
-    
+    df_rekap.to_csv(rekap_path, index=False)
+
+    plots = []
+
     for band, (fmin, fmax) in FREQ_RANGES.items():
-    
+
         df_spec_band = df_spec[
             (df_spec["Frequency (Hz)"] >= fmin) &
             (df_spec["Frequency (Hz)"] <= fmax)
         ]
         if df_spec_band.empty:
             continue
-    
+
         df_rekap_band = df_rekap[
             (df_rekap["Frekuensi"] * 1e6 >= fmin) &
             (df_rekap["Frekuensi"] * 1e6 <= fmax)
         ].copy()
-    
+
         if df_rekap_band.empty:
             continue
-    
 
-        df_rekap_band["_freq_key"] = df_rekap_band["Frekuensi"]
-    
-        table_df = df_rekap_band[DISPLAY_COLS ]
-    
+        table_df = df_rekap_band[DISPLAY_COLS]
+
         plots.append({
             "band": band,
             "freq": (df_spec_band["Frequency (Hz)"] / 1e6).tolist(),
@@ -1016,10 +1020,8 @@ def render_page():
             "table": table_df.to_dict("records")
         })
 
-    df_rekap = pd.read_csv("rekap_baru.csv")
     summary = build_summary(df_rekap)
     dataset_name = session.get("dataset_name")
-
 
     return render_template_string(
         TEMPLATE,
@@ -1043,7 +1045,7 @@ def save_uploads(data):
 
 @app.route("/open/<upload_id>")
 def open_upload(upload_id):
-    global CURRENT_SPECTRUM, CURRENT_FILE_TYPE
+    global CURRENT_SPECTRUM, CURRENT_FILE_TYPE, CURRENT_REKAP
 
     uploads = load_uploads()
     u = next((x for x in uploads if x["id"] == upload_id), None)
@@ -1051,15 +1053,14 @@ def open_upload(upload_id):
     if not u:
         return "Data tidak ditemukan", 404
 
-    CURRENT_SPECTRUM = os.path.join(UPLOAD_FOLDER, u["file"])
-    CURRENT_FILE_TYPE = u["file_type"]
+    session["active_spectrum"] = u["file"]
+    session["active_rekap"] = u["rekap"]
+    session["active_type"] = u["file_type"]
 
     return redirect(url_for("dashboard"))
 
 @app.route("/identifikasi", methods=["GET", "POST"])
 def identifikasi():
-    global CURRENT_SPECTRUM, CURRENT_FILE_TYPE, CURRENT_DATASET_NAME
-
     uploads = load_uploads()
 
     # ======================================================
@@ -1102,24 +1103,7 @@ def identifikasi():
     filename = f"spectrum_{ts}.csv"
     sp_path = os.path.join(UPLOAD_FOLDER, filename)
     spectrum.save(sp_path)
-
-    # ===============================
-    # SIMPAN REGISTRY UPLOAD
-    # ===============================
-    uploads.append({
-        "id": ts,
-        "name": dataset_name,
-        "file": filename,
-        "file_type": file_type,
-        "catatan": catatan
-    })
-    save_uploads(uploads)
-
-    # ===============================
-    # SET DATA AKTIF
-    # ===============================
-    CURRENT_SPECTRUM = sp_path
-    CURRENT_FILE_TYPE = file_type
+    
 
     # ===============================
     # LOAD & FILTER REKAP
@@ -1129,33 +1113,60 @@ def identifikasi():
     if catatan:
         df_rekap = df_rekap[df_rekap["Catatan"] == catatan]
 
-    # simpan sebagai rekap aktif
-    df_rekap.to_csv("rekap_baru.csv", index=False)
-
+    rekap_filename = f"rekap_{ts}.csv"
+    rekap_path = os.path.join(UPLOAD_FOLDER, rekap_filename)
+    
+    df_rekap.to_csv(rekap_path, index=False)
+    
+    # ===============================
+    # SIMPAN REGISTRY UPLOAD
+    # ===============================
+    uploads.append({
+        "id": ts,
+        "name": dataset_name,
+        "file": filename,
+        "file_type": file_type,
+        "catatan": catatan,
+        "rekap": rekap_filename   # ← tambahkan ini
+    })
+    save_uploads(uploads)
+    
+    # ===============================
+    # SET SESSION AKTIF (WAJIB)
+    # ===============================
+    session["active_spectrum"] = filename          # BUKAN sp_path
+    session["active_rekap"] = rekap_filename       # nama file saja
+    session["active_type"] = file_type
+    session["dataset_name"] = dataset_name
+    
     # ===============================
     # LANJUT KE DASHBOARD
     # ===============================
     return redirect(url_for("dashboard"))
 
 
-
 @app.route("/delete_row", methods=["POST"])
 def delete_row():
+
     data = request.get_json()
+
+    rekap_file = session.get("active_rekap")
+    if not rekap_file:
+        return {"error": "No active dataset"}, 400
+
+    rekap_path = os.path.join(UPLOAD_FOLDER, rekap_file)
+    df = pd.read_csv(rekap_path)
+
     freq = float(data.get("freq"))
 
-    df = pd.read_csv("rekap_baru.csv")
-
-    # Hapus berdasarkan frekuensi
     df = df[df["Frekuensi"] != freq]
 
-    # rebuild nomor untuk tampilan saja
     df = df.sort_values("Frekuensi").reset_index(drop=True)
     df["No"] = range(1, len(df) + 1)
 
-    df.to_csv("rekap_baru.csv", index=False)
+    df.to_csv(rekap_path, index=False)
 
-    return {"status":"ok"}
+    return {"status": "ok"}
 
 @app.route("/add_click", methods=["POST"])
 def add_click():
@@ -1165,7 +1176,9 @@ def add_click():
     level = float(data["level"])
     ident = data.get("identifikasi", "")
 
-    df = pd.read_csv("rekap_baru.csv")
+    rekap_file = session.get("active_rekap")
+    rekap_path = os.path.join(UPLOAD_FOLDER, rekap_file)
+    df = pd.read_csv(rekap_path)
 
     # pastikan numeric
     df["Frekuensi"] = pd.to_numeric(df["Frekuensi"], errors="coerce")
@@ -1209,7 +1222,7 @@ def add_click():
     df = df.sort_values("Frekuensi").reset_index(drop=True)
     df["No"] = range(1, len(df) + 1)
 
-    df.to_csv("rekap_baru.csv", index=False)
+    df.to_csv(rekap_path, index=False)
     return "", 204
 
 @app.route("/add", methods=["POST"])
@@ -1218,7 +1231,9 @@ def add_row():
     if not fmhz:
         return redirect(url_for("dashboard"))
 
-    df = pd.read_csv("rekap_baru.csv")
+    rekap_file = session.get("active_rekap")
+    rekap_path = os.path.join(UPLOAD_FOLDER, rekap_file)
+    df = pd.read_csv(rekap_path)
 
     hz = float(fmhz) * 1e6
     if hz in df["Frekuensi (Hz)"].values:
@@ -1230,14 +1245,16 @@ def add_row():
 
     df = pd.concat([df, pd.DataFrame([new])], ignore_index=True)
     df = df.sort_values("Frekuensi (Hz)")
-    df.to_csv("rekap_baru.csv", index=False)
+    df.to_csv(rekap_path, index=False)
 
     return redirect(url_for("dashboard"))
 
 @app.route("/add_popup", methods=["POST"])
 def add_popup():
     data = request.get_json()
-    df = pd.read_csv("rekap_baru.csv")
+    rekap_file = session.get("active_rekap")
+    rekap_path = os.path.join(UPLOAD_FOLDER, rekap_file)
+    df = pd.read_csv(rekap_path)
 
     hz = float(data["Frekuensi (Hz)"])
 
@@ -1259,7 +1276,7 @@ def add_popup():
     df = df.sort_values("Frekuensi (Hz)").reset_index(drop=True)
     df["No"] = range(1, len(df)+1)
 
-    df.to_csv("rekap_baru.csv", index=False)
+    df.to_csv(rekap_path, index=False)
     return {"status": "ok"}, 200
 
 
@@ -1314,7 +1331,9 @@ def save_table():
     data = request.get_json()
     rows = data.get("rows", {})
 
-    df = pd.read_csv("rekap_baru.csv")
+    rekap_file = session.get("active_rekap")
+    rekap_path = os.path.join(UPLOAD_FOLDER, rekap_file)
+    df = pd.read_csv(rekap_path)
 
     for no, cols in rows.items():
         no = int(no)
@@ -1327,9 +1346,37 @@ def save_table():
             if col in df.columns:
                 df.loc[idx, col] = val
 
-    df.to_csv("rekap_baru.csv", index=False)
+    df.to_csv(rekap_path, index=False)
     return {"status":"ok"}
 
+@app.route("/delete_dataset/<dataset_id>")
+def delete_dataset(dataset_id):
+
+    uploads = load_uploads()
+
+    dataset = next((u for u in uploads if u["id"] == dataset_id), None)
+    if not dataset:
+        return "Dataset tidak ditemukan", 404
+
+    # hapus file spectrum
+    spectrum_path = os.path.join(UPLOAD_FOLDER, dataset["file"])
+    if os.path.exists(spectrum_path):
+        os.remove(spectrum_path)
+
+    # hapus file rekap
+    rekap_path = os.path.join(UPLOAD_FOLDER, dataset["rekap"])
+    if os.path.exists(rekap_path):
+        os.remove(rekap_path)
+
+    # hapus dari registry
+    uploads = [u for u in uploads if u["id"] != dataset_id]
+    save_uploads(uploads)
+
+    # reset session jika sedang aktif
+    if session.get("active_spectrum") == dataset["file"]:
+        session.clear()
+
+    return redirect(url_for("identifikasi"))
 
 @app.route("/dashboard")
 def dashboard():
@@ -1456,19 +1503,24 @@ Data diambil dari <b>Rekapitulasi ROL 2025</b>
 
 
 <!-- ================== LIST DATASET ================== -->
-<!--
 <h3 style="margin-top:40px">📂 Spectrum Tersimpan</h3>
 <ul class="upload-list">
 {% for u in uploads %}
-<li>
-<a href="/open/{{ u.id }}">📊 {{ u.name }}</a>
+<li style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+
+    <a href="/open/{{ u.id }}">📊 {{ u.name }}</a>
+
+    <a href="/delete_dataset/{{ u.id }}"
+       onclick="return confirm('Yakin ingin menghapus dataset ini?')"
+       style="color:red; font-size:14px;">
+       🗑 Hapus
+    </a>
+
 </li>
 {% else %}
 <li><i>Belum ada data</i></li>
 {% endfor %}
 </ul>
--->
-
 </div>
 </div>
 
