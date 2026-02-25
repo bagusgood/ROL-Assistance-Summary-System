@@ -712,7 +712,7 @@ def load_rekap(path):
     # ===== REBUILD NO =====
     df["No"] = range(1, len(df) + 1)
 
-    df.to_csv(rekap_path, index=False)
+    df.to_csv(CURRENT_REKAP, index=False)
     return df
 
 
