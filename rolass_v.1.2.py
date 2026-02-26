@@ -171,7 +171,7 @@ def load_bts_data():
                         
                         try:
                             error_value = float(error_str)
-                            if error_value <= 14:
+                            if error_value <= 20:
                                 return "benar"
                             else:
                                 return "salah"
@@ -180,7 +180,7 @@ def load_bts_data():
                             numbers = re.findall(r'\d+\.?\d*', error_str)
                             if numbers:
                                 error_value = float(numbers[0])
-                                if error_value <= 14:
+                                if error_value <= 20:
                                     return "benar"
                                 else:
                                     return "salah"
