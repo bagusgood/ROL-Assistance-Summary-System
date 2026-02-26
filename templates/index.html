@@ -50,7 +50,7 @@
               <i class="fas fa-check-circle"></i>
             </div>
             <div class="stat-content">
-              <h3>Data Benar (≤14m)</h3>
+              <h3>Data Benar (≤20m)</h3>
               <p class="stat-value">
                 {{ benar_diambil }} ({{
                 "%.1f"|format(benar_diambil/total_towers*100) }}%)
@@ -63,7 +63,7 @@
               <i class="fas fa-times-circle"></i>
             </div>
             <div class="stat-content">
-              <h3>Data Salah (>14m)</h3>
+              <h3>Data Salah (>20m)</h3>
               <p class="stat-value">
                 {{ salah_diambil }} ({{
                 "%.1f"|format(salah_diambil/total_towers*100) }}%)
@@ -115,8 +115,8 @@
 
           <select id="statusFilter" onchange="filterTowers()">
             <option value="">Semua Status</option>
-            <option value="benar">Data Benar (≤14m)</option>
-            <option value="salah">Data Salah (>14m)</option>
+            <option value="benar">Data Benar (≤20m)</option>
+            <option value="salah">Data Salah (>20m)</option>
             <option value="belum">Belum Dihitung</option>
           </select>
 
@@ -317,12 +317,12 @@
 
               switch(tower.status) {
                     case 'benar':
-                        statusText = 'Data sudah benar (≤14m)';
+                        statusText = 'Data sudah benar (≤20m)';
                         statusIcon = '<i class="fas fa-check-circle"></i>';
                         statusColor = '#10b981';
                         break;
                     case 'salah':
-                        statusText = 'Data masih salah (>14m)';
+                        statusText = 'Data masih salah (>20m)';
                         statusIcon = '<i class="fas fa-times-circle"></i>';
                         statusColor = '#ef4444';
                         break;
@@ -413,9 +413,9 @@
 
                             var statusText = ''
                             if (selectedTower.status === "benar") {
-                                statusText = 'Data Benar (≤ 14m)'
+                                statusText = 'Data Benar (≤ 20m)'
                             } else if (selectedTower.status === "salah") {
-                                statusText = 'Data Salah (> 14m)';
+                                statusText = 'Data Salah (> 20m)';
                             } else {
                                 statusText = 'Data Belum Dihitung';
                             }
@@ -423,7 +423,7 @@
                             if(selectedTower.status === "benar") {
                                 document.getElementById('errorResult').innerHTML = `
                                     <div class="info-message">
-                                        <h4>${statusIcon} Data Benar (≤ 14m)</h4>
+                                        <h4>${statusIcon} Data Benar (≤ 20m)</h4>
                                         <h4>${selectedTower.name}</h4> <br>
                                         <p><strong>Provider:</strong> ${selectedTower.provider}</p>
                                         <p><strong>Cluster:</strong> ${selectedTower.cluster}</p>
@@ -433,7 +433,7 @@
                             } else if (selectedTower.status === "salah") {
                                 document.getElementById('errorResult').innerHTML = `
                                     <div class="info-message">
-                                        <h4>${statusIcon} Data Salah (> 14m)</h4>
+                                        <h4>${statusIcon} Data Salah (>20m)</h4>
                                         <h4>${selectedTower.name}</h4> <br>
                                         <p><strong>Provider:</strong> ${selectedTower.provider}</p>
                                         <p><strong>Cluster:</strong> ${selectedTower.cluster}</p>
