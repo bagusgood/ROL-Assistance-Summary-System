@@ -2282,6 +2282,30 @@ def load_data(year):
         print("Gagal ambil data API:", e)
         return pd.DataFrame()
 
+def load_data_excel(year):
+    url = "https://rol.postel.go.id/api/observasi/allapproved"
+    params = {
+        "upt": 19,
+        "year": 2026,
+        "pageIndex": 1,
+        "pageSize": 100000
+    }
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+        "Accept": "*/*",
+        "Referer": "https://rol.postel.go.id/observasi/laporan",
+        "X-Requested-With": "XMLHttpRequest",
+        "Cookie": "csrf_cookie_name=6701fbfe229f77d47c710eec3391f386; ci_session=1tmigk58v1636foa82v97rmo8o2olsrc"
+    }
+
+    try:
+        response = requests.get(url, params=params, headers=headers)
+        data = response.json().get("data", [])
+        return pd.DataFrame(data)
+    except Exception as e:
+        print("Gagal ambil data API:", e)
+        return pd.DataFrame()
+
 def load_info_inspeksi(use_cache=True):
     url = "https://apstard.postel.go.id/dashboard/info-inspeksi-3"
 
@@ -2725,7 +2749,7 @@ def unduh_laporan():
 @app.route("/download_excel", methods=["POST"])
 def download_excel():
     selected_year = request.form.get("year", "2025")
-    df = load_data(selected_year)
+    df = load_data_excel(selected_year)
 
     # Transformasi jenis identifikasi
     df["observasi_status_identifikasi_name"] = df["observasi_status_identifikasi_name"].str.replace(
@@ -2778,11 +2802,12 @@ def download_excel():
     try:
         # === Load ISR & Samakan Format ===
         base_dir = os.path.dirname(os.path.abspath(__file__))
-        isr_path = os.path.join(base_dir, "Data Target Monitor ISR 2025 - Mataram.csv")
+        isr_path = os.path.join(base_dir, "Data Target Monitor ISR 2026 - Mataram.csv")
     
         # Load CSV
-        df_ISR = pd.read_csv(isr_path, on_bad_lines='skip', delimiter=';') \
+        df_ISR = pd.read_csv(isr_path, on_bad_lines='skip', delimiter=',') \
                     .rename(columns={'Freq': 'Frekuensi', 'Clnt Name': 'Identifikasi'})
+                    
         df_ISR['Frekuensi'] = pd.to_numeric(df_ISR['Frekuensi'], errors='coerce')
         filt['observasi_frekuensi'] = pd.to_numeric(filt['observasi_frekuensi'], errors='coerce')
     
@@ -3297,10 +3322,10 @@ def index():
     try:
         # === Load ISR & Samakan Format ===
         base_dir = os.path.dirname(os.path.abspath(__file__))
-        isr_path = os.path.join(base_dir, "Data Target Monitor ISR 2025 - Mataram.csv")
+        isr_path = os.path.join(base_dir, "Data Target Monitor ISR 2026 - Mataram.csv")
     
         # Load CSV
-        df_ISR = pd.read_csv(isr_path, on_bad_lines='skip', delimiter=';') \
+        df_ISR = pd.read_csv(isr_path, on_bad_lines='skip', delimiter=',') \
                     .rename(columns={'Freq': 'Frekuensi', 'Clnt Name': 'Identifikasi'})
         df_ISR['Frekuensi'] = pd.to_numeric(df_ISR['Frekuensi'], errors='coerce')
         filt['observasi_frekuensi'] = pd.to_numeric(filt['observasi_frekuensi'], errors='coerce')
