@@ -3510,55 +3510,71 @@ def index():
                                  "#6d98b3", "#91cfe3", "#af8703", "#a83639", "#575759", "#252526",
                                  "#044065", "#d5ad2b", "#884a4c"]
     )
-    """"
+    
+    import urllib.parse
+    import urllib3
+    
     # ===== INVOICE DENDA =====
     urllib3.disable_warnings()
-
+    
     url = "https://dendaadministratif.postel.go.id/application/invoice/get/data/management"
-
+    
+    session = requests.Session()
+    
     cookies = {
-        "XSRF-TOKEN": "eyJpdiI6InNYY3UwV1VhS1RsTXFCb2FOd0cxeFE9PSIsInZhbHVlIjoiNFh4WTE5VVBZWWFWL0tKbUxYUi95R2FHWTRLd0U4THgvQnY4eGt1SjRHbkZFQ0hKcTNZTk9RcUFiMEFrOHR1T3hqOWhkTFNjeXEzdGVpZEJ4RjEzcUdYSE42dXk0d0o0UzA1QlFHTEZSbEs1bHJxT3RBY3NjOVl6aUp4b3ZaVWwiLCJtYWMiOiI2MTcxZjQzMmVhZDdlNmE1Y2ZkYWMzMzQzYjg0YzhmNjI0YTg3YTEwYmNkMzc4NWU0YTczZDdkZDBkMGY3MGUzIiwidGFnIjoiIn0%3D%3D",
-        "bbppt_session": "eyJpdiI6IlozL1FsWVgremIwTzhwbzEra1Q0bUE9PSIsInZhbHVlIjoiTVNZVlFMUGdLYWltM1pQR0gxZ0pjZWJ5SkxITXJuWGoyNVc1STdRMGNGY0RnakFHZDY4cjcvV2s4d0RDWThUL3doZWVIaU5iejhIN3MyRkNjL1ZlR25wdGZCemVaZGV0T3NIUytWaHVIRjREaTAxMHgyRHZCVi9yZFdKNXk0eW0iLCJtYWMiOiIzY2I5ZWYxNzcyYTc0ZDJlMTA4ZjQ1ODFlMDZmMzJjN2E0MTdmMTA5ZGQ2NjdiYjY1NzBmZjVmMTNkNDkzMzFiIiwidGFnIjoiIn0%3D%3D"
+        "_ga": "GA1.1.811209475.1765936658",
+        "_ga_G86CWBQFF8": "GS2.1.s1765944541$o2$g1$t1765944559$j42$l0$h0",
+        "_ga_5GQYGHWD1N": "GS2.1.s1769496827$o4$g1$t1769496881$j6$l0$h1964631611",
+        "XSRF-TOKEN": "eyJpdiI6IkZLcG9jRVlNc2hpcFNvdDVhbUNYcVE9PSIsInZhbHVlIjoiUlBiM1ByazhCSEVwM3VvdFR3aktPc2wwQ0Z3MXc1ekxCY0V2VEwyZ1l0QW02ZUdsblEyMk0yQTl3dk5Xc0FXbitET1RzTG4xMFdrRmdGL2V1eDNGNHJiNEF6WU5OUFZZdEk2TCtYYVQ4cWg0SHdyWjN2VmRWUk5DdWszUTZJN2UiLCJtYWMiOiI5MzEwMzA1ZTQ4MWI5NzkzNzZiNTA4OWFhMDY2MTNhNjlhZWI1NDYxZjQyM2E0OTAyZjNhNzRlZjVkYzRiODhhIiwidGFnIjoiIn0%3D",
+        "bbppt_session": "eyJpdiI6ImN6WWM3cGJ6Mjd6cGdTRHQ1RzZaY1E9PSIsInZhbHVlIjoiNVZBNlB1SzFWeTYwSlJMMHJjZTZMYVVndlpmYVp5UnlRcFIwSW1Ea3pDNzNEb1hUc090aTljR1dtYmFqSGRZdGZySkR3YkIrSDIvMm5NWU1XS2ZxZG1JUlhyOXBxQml5eXM1MVRvZGNlT3ArajM2Tjd5cUw3M3J3YWhGZWo2NUkiLCJtYWMiOiI1ODE0MjE3NmM0MWNhMjY4MjM1NDk4OTZkMjE5NDI4MjA3YTJhYzRhMTEyMjY3N2I2OGYzM2VmOTg3NjA5NjhkIiwidGFnIjoiIn0%3D"
     }
-
+    
     xsrf_token = urllib.parse.unquote(cookies["XSRF-TOKEN"])
-
+    
     headers = {
-        "User-Agent": "Mozilla/5.0",
-        "Accept": "application/json",
-        "X-Requested-With": "XMLHttpRequest",
-        "X-XSRF-TOKEN": xsrf_token,
+        "Accept": "application/json, text/javascript, */*; q=0.01",
+        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+        "Origin": "https://dendaadministratif.postel.go.id",
         "Referer": "https://dendaadministratif.postel.go.id/application/invoice/management",
-        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8"
+        "User-Agent": "Mozilla/5.0",
+        "X-Requested-With": "XMLHttpRequest",
+        "X-XSRF-TOKEN": xsrf_token
     }
     
     payload = {
         "draw": 1,
         "start": 0,
-        "length": 1000,
-
-        "columns[0][data]": "invoice_id",
-        "columns[0][name]": "invoice_id",
-        "columns[0][searchable]": "true",
-        "columns[0][orderable]": "true",
-        "columns[0][search][value]": "",
-        "columns[0][search][regex]": "false",
-
-        "columns[1][data]": "invoice_number",
-        "columns[1][name]": "invoice_number",
-        "columns[1][searchable]": "true",
-        "columns[1][orderable]": "true",
-        "columns[1][search][value]": "",
-        "columns[1][search][regex]": "false",
-
-        "order[0][column]": 0,
-        "order[0][dir]": "desc",
-
+        "length": 10000,
         "search[value]": "",
-        "search[regex]": "false"
+        "search[regex]": "false",
+        "_token": "wcj3NKMUXbPBSMKJYecBMyVzYlL3iFFXBiVCNGmq",
     }
-
-    resp = requests.post(
+    
+    # generate columns otomatis
+    columns = [
+    "invoice_id","invoice_number","invoice_number_application","rol_id","kode_billing_simponi",
+    "spectra_ad_man_number","client_name","simulation_detail_id","total_amount",
+    "payment_total_amount","invoice_status_style","publish_date","due_date","bulan_ke",
+    "payment_date","ntb","ntpn","status_sakti","keterangan","kualitas_piutang",
+    "jenis_surat_tagihan","violation_type_name","office_name","kecamatan","kelurahan",
+    "pic_name","jenis_penertiban","action"
+    ]
+    
+    for i, col in enumerate(columns):
+        payload[f"columns[{i}][data]"] = col
+        payload[f"columns[{i}][name]"] = col
+        payload[f"columns[{i}][searchable]"] = "true"
+        payload[f"columns[{i}][orderable]"] = "true"
+        payload[f"columns[{i}][search][value]"] = ""
+        payload[f"columns[{i}][search][regex]"] = "false"
+    
+    payload["columns[27][searchable]"] = "false"
+    payload["columns[27][orderable]"] = "false"
+    
+    payload["order[0][column]"] = 11
+    payload["order[0][dir]"] = "DESC"
+    
+    resp = session.post(
         url,
         headers=headers,
         cookies=cookies,
@@ -3566,15 +3582,20 @@ def index():
         verify=False,
         timeout=30
     )
-
-    print(resp.status_code)
-    print(resp.text[:300])
-
+    
+    #print("Status:", resp.status_code)
+    #print(resp.text[:300])
+    
     resp.raise_for_status()
-
-    df_denda = pd.DataFrame(resp.json()["data"])
+    
+    data = resp.json()["data"]
+    
+    df_denda = pd.DataFrame(data)
+    
     df_denda.to_csv("invoice.csv", index=False)
-    """
+    
+    #print("Data tersimpan ke invoice.csv")
+    
     
     df_invoice = pd.read_csv("invoice.csv")
     
@@ -3613,9 +3634,9 @@ def index():
     
         # 5️⃣ Konversi kembali ke Rupiah
         denda_terbayar = int_to_rupiah(total_terbayar)
-        print(denda_terbayar)
+        #print(denda_terbayar)
         denda_belum = int_to_rupiah(total_belum)
-        print(denda_belum)
+        #print(denda_belum)
 
     
     # Data untuk Pie Chart (status pembayaran)
