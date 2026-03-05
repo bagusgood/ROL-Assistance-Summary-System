@@ -3318,7 +3318,6 @@ def index():
     # Hitung persentase kab/kota termonitor
     persen_kota_termonitor = int((jumlah_kota_termonitor / 10) * 100)
 
-    
     try:
         # === Load ISR & Samakan Format ===
         base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -3476,36 +3475,29 @@ def index():
         )
     )
     
-    pie_pantib = px.pie(
-        df_pantib, 
-        names="status_pelanggaran_name", 
-        title="Jenis Pelanggaran",
-        hole=0.5, 
-        color_discrete_sequence=["#006db0", "#00ade6", "#edbc1b", "#8f181b", "#EF4444", "#6B7280",
-                                 "#6d98b3", "#91cfe3", "#af8703", "#a83639", "#575759", "#252526",
-                                 "#044065", "#d5ad2b", "#884a4c"])
-    
-    pie_pantib.update_layout(
-        legend=dict(
-            orientation="v",
-            yanchor="middle",
-            y=0.5,
-            xanchor="left",
-            x=1.05,
-            font=dict(size=12)
-        )
-    )
-
-
-    bar_data = df_pantib.groupby("status_pelanggaran_name").size().reset_index(name="jumlah")
+    bar_data = df_pantib.groupby("penertiban_service_name").size().reset_index(name="jumlah")
 
     bar_pantib = px.bar(
         bar_data,
+        x="penertiban_service_name",
+        y="jumlah",
+        title="Dinas Pelanggaran",
+        text="jumlah",
+        labels={"penertiban_service_name":"Dinas Pelanggaran"},
+        color_discrete_sequence=["#006db0", "#00ade6", "#edbc1b", "#8f181b", "#EF4444", "#6B7280",
+                                 "#6d98b3", "#91cfe3", "#af8703", "#a83639", "#575759", "#252526",
+                                 "#044065", "#d5ad2b", "#884a4c"]
+    )
+
+    bar2_data = df_pantib.groupby("status_pelanggaran_name").size().reset_index(name="jumlah")
+
+    bar2_pantib = px.bar(
+        bar2_data,
         x="status_pelanggaran_name",
         y="jumlah",
-        title="Jumlah Pelanggaran",
+        title="Penyebab Pelanggaran",
         text="jumlah",
-        labels={"status_pelanggaran_name":"Jenis Pelanggaran"},
+        labels={"status_pelanggaran_name":"Penyebab Pelanggaran"},
         color_discrete_sequence=["#006db0", "#00ade6", "#edbc1b", "#8f181b", "#EF4444", "#6B7280",
                                  "#6d98b3", "#91cfe3", "#af8703", "#a83639", "#575759", "#252526",
                                  "#044065", "#d5ad2b", "#884a4c"]
@@ -3685,14 +3677,14 @@ def index():
     bar_denda_json = json.dumps(bar_denda, cls=plotly.utils.PlotlyJSONEncoder)
 
     for fig in [pie1]:
-        for fig in [pie1, pie_band, bar1, bar1_pita, pie_pantib, bar_pantib, pie_inspeksi, bar_inspeksi, pie_denda, bar_denda]:
+        for fig in [pie1, pie_band, bar1, bar1_pita, bar_pantib, bar2_pantib, pie_inspeksi, bar_inspeksi, pie_denda, bar_denda]:
             fig.update_layout(
                 paper_bgcolor="#1e293b",  # background luar chart
                 plot_bgcolor="#1e293b",   # background area plot
                 font=dict(color="white")  # teks jadi putih
             )
         
-    for fig in [pie_band, bar1, bar1_pita, pie_pantib, bar_pantib, pie_inspeksi, bar_inspeksi, pie_denda, bar_denda]:
+    for fig in [pie_band, bar1, bar1_pita, bar_pantib, bar2_pantib, pie_inspeksi, bar_inspeksi, pie_denda, bar_denda]:
         fig.update_layout(
             paper_bgcolor="#1e293b",
             plot_bgcolor="#1e293b",
@@ -3765,8 +3757,8 @@ def index():
     pie_band_json = json.dumps(pie_band, cls=plotly.utils.PlotlyJSONEncoder)
     bar1_json = json.dumps(bar1, cls=plotly.utils.PlotlyJSONEncoder)
     bar1_pita_json = json.dumps(bar1_pita, cls=plotly.utils.PlotlyJSONEncoder)
-    pie_pantib_json = json.dumps(pie_pantib, cls=PlotlyJSONEncoder)
     bar_pantib_json = json.dumps(bar_pantib, cls=PlotlyJSONEncoder)
+    bar2_pantib_json = json.dumps(bar2_pantib, cls=PlotlyJSONEncoder)
     
     pie_inspeksi_json = json.dumps(pie_inspeksi, cls=PlotlyJSONEncoder)
     bar_inspeksi_json = json.dumps(bar_inspeksi, cls=PlotlyJSONEncoder)
@@ -4253,8 +4245,8 @@ def index():
     </div>
 
     <div class="chart-row">
-        <div class="chart-container" id="pie_pantib"></div>
         <div class="chart-container" id="bar_pantib"></div>
+        <div class="chart-container" id="bar2_pantib"></div>
     </div>
         
     <!-- === Chart Penanganan Denda === -->
@@ -4302,11 +4294,6 @@ def index():
         </div>
     </div>
 
-    
-    <div class="chart-row">
-        <div class="chart-container" id="pie_denda"></div>
-        <div class="chart-container" id="bar_denda"></div>
-    </div>
 
     
     <!-- Info Cards Inspeksi -->
@@ -4435,10 +4422,10 @@ def index():
     </script>
     
     <script>
-        var piePantib = {{ pie_pantib_json|safe }};
         var barPantib = {{ bar_pantib_json|safe }};
-        Plotly.newPlot('pie_pantib', piePantib.data, piePantib.layout, {responsive:true});
+        var bar2Pantib = {{ bar2_pantib_json|safe }};
         Plotly.newPlot('bar_pantib', barPantib.data, barPantib.layout, {responsive:true});
+        Plotly.newPlot('bar2_pantib', bar2Pantib.data, bar2Pantib.layout, {responsive:true});
     </script>
     
     <script>
@@ -4583,10 +4570,10 @@ def index():
     isr_percent=isr_percent,
     jumlah_pelanggaran=jumlah_pelanggaran,
     persentase_ditertibkan=persentase_ditertibkan,
-    pie_pantib=pie_pantib.to_html(full_html=False),
     bar_pantib=bar_pantib.to_html(full_html=False),
-    pie_pantib_json=pie_pantib_json,
+    bar2_pantib=bar2_pantib.to_html(full_html=False),
     bar_pantib_json=bar_pantib_json,
+    bar2_pantib_json=bar2_pantib_json,
     sudah_inspeksi = sudah_inspeksi,
     total_inspeksi = total_inspeksi,
     capaian_inspeksi = capaian_inspeksi,
