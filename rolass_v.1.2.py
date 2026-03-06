@@ -4283,7 +4283,7 @@ def index():
         <div class="chart-container" id="bar1"></div>
     </div>
     
-    <h3>Peta Sebaran Monitoring</h3>
+    <h3>Peta Sebaran Monitoring {{selected_year}}</h3>
     
     <div class="map-container" style="height:600px; margin:20px;">
         {{ map_html|safe }}
