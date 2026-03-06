@@ -3292,6 +3292,70 @@ def index():
 
     if filt.empty:
         return f"<h3>Data kosong untuk kombinasi tersebut.</h3><p>SPT: {selected_spt}, Kab: {selected_kab}, Kec: {selected_kec}</p>"
+
+    # ===== PETA SEBARAN =====
+    # ===== DATA UNTUK PETA (RINGAN) =====
+    cols_map = [
+        "observasi_scan_detail_lat",
+        "observasi_scan_detail_long",
+        "scan_catatan"
+    ]
+    
+    filt2 = filt[cols_map].copy()
+    
+    # ubah ke numeric
+    filt2["observasi_scan_detail_lat"] = pd.to_numeric(
+        filt2["observasi_scan_detail_lat"], errors="coerce"
+    )
+    
+    filt2["observasi_scan_detail_long"] = pd.to_numeric(
+        filt2["observasi_scan_detail_long"], errors="coerce"
+    )
+    
+    # hapus yang tidak ada koordinat
+    filt2 = filt2.dropna(
+        subset=["observasi_scan_detail_lat", "observasi_scan_detail_long"]
+    )
+    
+    
+    print("Jumlah titik peta:", len(filt2))
+    
+    import folium
+    from folium.plugins import MarkerCluster
+    
+    map_html = None
+    
+    filt2 = filt2.drop_duplicates(
+        subset=[
+            "observasi_scan_detail_lat",
+            "observasi_scan_detail_long"
+        ]
+    )
+    
+    if not filt2.empty:
+    
+        center_lat = filt2["observasi_scan_detail_lat"].mean()
+        center_lon = filt2["observasi_scan_detail_long"].mean()
+    
+        m = folium.Map(
+            location=[center_lat, center_lon],
+            zoom_start=10
+        )
+    
+        marker_cluster = MarkerCluster().add_to(m)
+    
+        for _, row in filt2.iterrows():
+            folium.Marker(
+                location=[
+                    row["observasi_scan_detail_lat"],
+                    row["observasi_scan_detail_long"]
+                ],
+                popup=row["scan_catatan"],
+                tooltip=row["scan_catatan"]
+            ).add_to(marker_cluster)
+    
+        map_html = m._repr_html_()
+    
     
     # === Ringkasan Data untuk Info Cards ===
     total_data = len(filt)
@@ -3502,7 +3566,7 @@ def index():
                                  "#6d98b3", "#91cfe3", "#af8703", "#a83639", "#575759", "#252526",
                                  "#044065", "#d5ad2b", "#884a4c"]
     )
-    
+    '''
     import urllib.parse
     import urllib3
     
@@ -3588,7 +3652,7 @@ def index():
     
     #print("Data tersimpan ke invoice.csv")
     
-    
+    '''
     df_invoice = pd.read_csv("invoice.csv")
     
     # default output
@@ -3629,7 +3693,7 @@ def index():
         #print(denda_terbayar)
         denda_belum = int_to_rupiah(total_belum)
         #print(denda_belum)
-
+    
     
     # Data untuk Pie Chart (status pembayaran)
     pie_denda_status = pd.DataFrame({
@@ -4218,7 +4282,13 @@ def index():
         <div class="chart-container" id="pie_band"></div>
         <div class="chart-container" id="bar1"></div>
     </div>
-
+    
+    <h3>Peta Sebaran Monitoring</h3>
+    
+    <div class="map-container" style="height:600px; margin:20px;">
+        {{ map_html|safe }}
+    </div>
+    
     <!-- Info Cards Pantib -->
     <form method="POST" class="filter-form3" id="main-form">
     <div style="display:flex; left-content:space-between; align-items:center; margin:10px 10px 10px;">
@@ -4552,6 +4622,8 @@ def index():
     kab_options=kab_options,
     kec_options=kec_options,
     cat_options=cat_options,
+    map_html=map_html,
+    filt=filt,
     selected_year=selected_year,
     pantib_selected_year=pantib_selected_year,
     selected_spt=selected_spt,
