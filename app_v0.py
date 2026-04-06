@@ -3514,7 +3514,7 @@ def index():
     )
 
     bar1.update_layout(
-        uniformtext_minsize=8,
+        uniformtext_minsize=10,
         uniformtext_mode='hide',
         bargap=0.2,
         plot_bgcolor='#0f172a',
@@ -3577,7 +3577,7 @@ def index():
         marker_line_width=0
     )
     bar1_pita.update_layout(
-        uniformtext_minsize=8,
+        uniformtext_minsize=10,
         uniformtext_mode='hide',
         bargap=0.2,
         plot_bgcolor='#0f172a',
@@ -3660,7 +3660,7 @@ def index():
         # judul chart
         title=dict(
             text="Distribusi Pita & Legalitas",
-            font=dict(color="white", size=22),
+            font=dict(color="white", size=18),
             x=0.02,
             xanchor="left"
         ),
