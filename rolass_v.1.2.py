@@ -38,6 +38,7 @@ import pandas as pd
 import numpy as np
 from geopy.distance import geodesic
 from werkzeug.utils import secure_filename
+import plotly.io as pio
 
 app = Flask(__name__)
 app.secret_key = "rahasia_super"  # ganti dengan secret key lebih kuat
@@ -3438,56 +3439,161 @@ def index():
 
     # Persentase ISR sesuai target (sementara contoh statis)
     isr_percent = persen_sesuai_isr
-
-    # Chart
-    pie1 = px.pie(filt, names="observasi_status_identifikasi_name", title="Distribusi Legalitas",
-                  hole=0.5, 
-                  color_discrete_sequence=["#006db0", "#00ade6", "#edbc1b", "#8f181b", "#EF4444", "#6B7280",
-                                           "#6d98b3", "#91cfe3", "#af8703", "#a83639", "#575759", "#252526",
-                                           "#044065", "#d5ad2b", "#884a4c"])
+    
+    colors = [
+        "#006db0", "#00ade6", "#edbc1b", "#8f181b", "#EF4444", "#6B7280",
+        "#6d98b3", "#91cfe3", "#af8703", "#a83639", "#575759", "#252526",
+        "#044065", "#d5ad2b", "#884a4c"
+    ]
+    
+    # =========================
+    # CHART 1 - PIE LEGALITAS
+    # =========================
+    pie1 = px.pie(
+        filt,
+        names="observasi_status_identifikasi_name",
+        title="Distribusi Legalitas",
+        hole=0.5,
+        color_discrete_sequence=colors
+    )
     pie1.update_layout(
-        legend=dict(
-            font=dict(color='white', size=8))
-        )
-    pie_band = px.pie(filt, names="band_nama", title="Distribusi Band", 
-                      hole=0.5,
-                      color_discrete_sequence=["#006db0", "#00ade6", "#edbc1b", "#8f181b", "#EF4444", "#6B7280",
-                                               "#6d98b3", "#91cfe3", "#af8703", "#a83639", "#575759", "#252526",
-                                               "#044065", "#d5ad2b", "#884a4c"])
+        plot_bgcolor="#0f172a",
+        paper_bgcolor="#0f172a",
+        font=dict(color="white"),
+        legend=dict(font=dict(color='white', size=10))
+    )
+    
+    # =========================
+    # CHART 2 - PIE BAND
+    # =========================
+    pie_band = px.pie(
+        filt,
+        names="band_nama",
+        title="Distribusi Band",
+        hole=0.5,
+        color_discrete_sequence=colors
+    )
+    pie_band.update_layout(
+        plot_bgcolor="#0f172a",
+        paper_bgcolor="#0f172a",
+        font=dict(color="white"),
+        legend=dict(font=dict(color='white', size=10))
+    )
+    
+    # =========================
+    # CHART 3 - BAR DINAS & JENIS
+    # =========================
+    bar = (
+        filt.groupby(["observasi_service_name", "jenis"])
+        .size()
+        .reset_index(name="jumlah")
+        .sort_values(by="jumlah", ascending=False)
+    )
 
-    bar = filt.groupby(["observasi_service_name", "jenis"]).size().reset_index(name="jumlah").sort_values(by="jumlah", ascending=False)
     total_per_dinas = (
-    filt.groupby("observasi_service_name")
-    .size()
-    .sort_values(ascending=False))
-    
-    ordered_dinas = total_per_dinas.index.tolist()  # urutan berdasarkan total
-    bar1 = px.bar(bar, y="observasi_service_name", x="jumlah", color="jenis", orientation='h',
-                  title="Distribusi Dinas & Jenis",
-                  labels={"observasi_service_name": "Nama Dinas",
-                          "jumlah": "Jumlah Data",
-                          "jenis": ""},
-                  category_orders={"observasi_service_name": ordered_dinas},
-                  color_discrete_sequence=["#006db0", "#00ade6", "#edbc1b", "#8f181b", "#EF4444", "#6B7280",
-                                           "#6d98b3", "#91cfe3", "#af8703", "#a83639", "#575759", "#252526",
-                                           "#044065", "#d5ad2b", "#884a4c"])
-    
+        filt.groupby("observasi_service_name")
+        .size()
+        .sort_values(ascending=False)
+    )
+
+    ordered_dinas = total_per_dinas.index.tolist()
+    bar1 = px.bar(
+        bar,
+        y="observasi_service_name",
+        x="jumlah",
+        color="jenis",
+        orientation='h',
+        title="Distribusi Dinas & Jenis",
+        labels={
+            "observasi_service_name": "Nama Dinas",
+            "jumlah": "Jumlah Data",
+            "jenis": ""
+        },
+        category_orders={"observasi_service_name": ordered_dinas},
+        color_discrete_sequence=colors
+    )
+
     bar1.update_layout(
-        uniformtext_minsize=8,
+        uniformtext_minsize=10,
         uniformtext_mode='hide',
         bargap=0.2,
         plot_bgcolor='#0f172a',
         paper_bgcolor='#0f172a',
         font=dict(color='white'),
         legend=dict(
-            orientation="h",      # horizontal
-            yanchor="bottom",     # anchor ke bawah
-            y=-0.3,               # posisi agak di luar bawah chart
-            xanchor="center",     
-            x=0.5                 # posisi di tengah
+            orientation="h",
+            yanchor="bottom",
+            y=-0.3,
+            xanchor="center",
+            x=0.5
         )
     )
 
+    # =========================
+    # CHART 4 - BAR PITA & LEGALITAS
+    # =========================
+    bar_pita = (
+        filt.groupby(["observasi_range_frekuensi", "observasi_status_identifikasi_name"])
+        .size()
+        .reset_index(name="jumlah")
+        .sort_values(by="jumlah", ascending=False)
+    )
+
+    bar_pita["pita_singkat"] = (
+        bar_pita["observasi_range_frekuensi"]
+        .astype(str)
+        .str.split('.')
+        .str[0]
+    )
+
+    total_per_pita = (
+        filt.groupby("observasi_range_frekuensi")
+        .size()
+        .sort_values(ascending=False)
+    )
+
+    ordered_pita = total_per_pita.index.tolist()
+    ordered_pita_singkat = [str(val).split('.')[0] for val in ordered_pita]
+
+    bar1_pita = px.bar(
+        bar_pita,
+        y="pita_singkat",
+        x="jumlah",
+        color="observasi_status_identifikasi_name",
+        orientation='h',
+        title="Distribusi Pita & Legalitas",
+        labels={
+            "pita_singkat": "Pita Frekuensi",
+            "jumlah": "Jumlah Data",
+            "observasi_status_identifikasi_name": ""
+        },
+        category_orders={"pita_singkat": ordered_pita_singkat},
+        hover_name="observasi_range_frekuensi",
+        color_discrete_sequence=colors
+    )
+
+    bar1_pita.update_traces(
+        textfont=dict(color="white"),
+        marker_line_width=0
+    )
+    bar1_pita.update_layout(
+        uniformtext_minsize=10,
+        uniformtext_mode='hide',
+        bargap=0.2,
+        plot_bgcolor='#0f172a',
+        paper_bgcolor='#0f172a',
+        font=dict(color='white'),
+        legend=dict(
+            font=dict(size=8),
+            orientation="h",
+            yanchor="bottom",
+            y=-0.4,
+            xanchor="center",
+            x=0.5,
+        )
+    )
+    
+    
     bar_pita = filt.groupby(["observasi_range_frekuensi", "observasi_status_identifikasi_name"]).size().reset_index(name="jumlah").sort_values(by="jumlah", ascending=False)
     # Buat kolom pita_singkat
     bar_pita["pita_singkat"] = bar_pita["observasi_range_frekuensi"].astype(str).str.split('.').str[0]
@@ -3517,27 +3623,93 @@ def index():
         },
         category_orders={"pita_singkat": ordered_pita_singkat},
         hover_name="observasi_range_frekuensi",
-        color_discrete_sequence=["#006db0", "#00ade6", "#edbc1b", "#8f181b", "#EF4444", "#6B7280",
-                                 "#6d98b3", "#91cfe3", "#af8703", "#a83639", "#575759", "#252526",
-                                 "#044065", "#d5ad2b", "#884a4c"]
+        color_discrete_sequence=[
+            "#006db0", "#00ade6", "#edbc1b", "#8f181b", "#EF4444", "#6B7280",
+            "#6d98b3", "#91cfe3", "#af8703", "#a83639", "#575759", "#252526",
+            "#044065", "#d5ad2b", "#884a4c"
+        ],
+        template="plotly_dark"   # PENTING
     )
     
-    bar1_pita.update_traces(text=None)    
-    bar1_pita.update_layout(
-        uniformtext_minsize=8,
-        uniformtext_mode='hide',
-        bargap=0.2,
-        plot_bgcolor='#0f172a',
-        paper_bgcolor='#0f172a',
-        legend=dict(
-            font=dict(size=8),
-            orientation="h",
-            yanchor="bottom",
-            y=-0.4,
-            xanchor="center",
-            x=0.5,
+    bar1_pita.update_traces(
+        textfont=dict(color="white"),
+        marker_line_width=0,
+        hoverlabel=dict(
+            font=dict(color="white"),
+            bgcolor="#1e293b"
         )
     )
+    
+    bar1_pita.update_layout(
+        autosize=True,
+        uniformtext_minsize=10,
+        uniformtext_mode='hide',
+        bargap=0.2,
+    
+        # background
+        plot_bgcolor='#0f172a',
+        paper_bgcolor='#0f172a',
+    
+        # font global
+        font=dict(
+            family="Segoe UI, Arial, sans-serif",
+            color="white",
+            size=12
+        ),
+    
+        # judul chart
+        title=dict(
+            text="Distribusi Pita & Legalitas",
+            font=dict(color="white", size=18),
+            x=0.02,
+            xanchor="left"
+        ),
+    
+        # legend
+        legend=dict(
+            font=dict(color='white', size=9),
+            title=dict(text="", font=dict(color="white")),
+            orientation="h",
+            yanchor="bottom",
+            y=-0.38,
+            xanchor="center",
+            x=0.5,
+            bgcolor="rgba(0,0,0,0)"
+        ),
+    
+        # sumbu X
+        xaxis=dict(
+            title=dict(
+                text="Jumlah Data",
+                font=dict(color="white", size=12)
+            ),
+            tickfont=dict(color="white", size=11),
+            gridcolor='rgba(255,255,255,0.12)',
+            zerolinecolor='rgba(255,255,255,0.18)',
+            showline=False
+        ),
+    
+        # sumbu Y
+        yaxis=dict(
+            title=dict(
+                text="Pita Frekuensi",
+                font=dict(color="white", size=12)
+            ),
+            tickfont=dict(color="white", size=11),
+            gridcolor='rgba(255,255,255,0.08)',
+            automargin=True
+        )
+    )
+    
+    # PAKSA semua annotation jadi putih
+    if bar1_pita.layout.annotations:
+        for ann in bar1_pita.layout.annotations:
+            ann.font = dict(color="white", size=12)
+    
+    pie1_html = pio.to_html(pie1, full_html=False, include_plotlyjs='cdn')
+    pie_band_html = pio.to_html(pie_band, full_html=False, include_plotlyjs=False)
+    bar1_html = pio.to_html(bar1, full_html=False, include_plotlyjs=False)
+    bar1_pita_html = pio.to_html(bar1_pita, full_html=False, include_plotlyjs=False)
     
     bar_data = df_pantib.groupby("penertiban_service_name").size().reset_index(name="jumlah")
 
@@ -3836,26 +4008,47 @@ def index():
         <link rel="icon" type="image/png" href="{{ url_for('static', filename='D.png') }}">
         <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
         <style>
-            body { font-family: Arial; padding: 20px; }
-            select { margin-right: 10px; }
-            .chart { margin-top: 30px; }
-            .chart-row {
-                display: flex;
-                flex-wrap: wrap;     /* biar chart bisa turun ke bawah kalau layar sempit */
-                gap: 20px;
-                margin: 20px 0;
-            }
-            }
-            .chart {
-                flex: 1;
-                width: 100%;       /* ikut lebar container */
-                height: auto;      /* tinggi menyesuaikan */
-                min-width: 0;      /* biar bisa mengecil */
-            }
             body {
                 background-color: #0d1b2a;
                 color: white;
                 font-family: 'Segoe UI', sans-serif;
+                padding: 20px;
+                margin: 0;
+            }
+        
+            select { margin-right: 10px; }
+        
+            .chart-row {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 20px;
+                margin: 20px 0;
+                align-items: stretch;
+            }
+        
+            .chart-container {
+                flex: 1 1 48%;
+                min-width: 420px;
+                background-color: #1e293b;
+                border-radius: 10px;
+                padding: 15px;
+                min-height: 450px;
+                width: 100%;
+                position: relative;
+                overflow: hidden; /* penting */
+                box-sizing: border-box;
+            }
+        
+            /* Plotly chart di dalam container */
+            .chart-container .plotly-graph-div {
+                width: 100% !important;
+                height: 100% !important;
+            }
+        
+            .chart {
+                width: 100%;
+                height: 100%;
+                min-width: 0;
             }
         
             .filter-form {
@@ -3863,12 +4056,12 @@ def index():
                 flex-wrap: wrap;
                 gap: 20px;
                 margin: 2px 0;
-                background-color: #1e1e1e; /* gelap */
+                background-color: #1e1e1e;
                 padding: 20px;
                 border-radius: 10px;
                 box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
             }
-            
+        
             .filter-form2 {
                 display: flex;
                 flex-wrap: wrap;
@@ -3878,34 +4071,34 @@ def index():
                 border-radius: 1px;
                 box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
             }
-            
+        
             .filter-form3 {
                 display: flex;
                 flex-wrap: wrap;
                 gap: 10px;
                 margin: 2px 0;
-                background-color: #1e1e1e; /* gelap */
+                background-color: #1e1e1e;
                 padding: 10px;
                 border-radius: 10px;
                 box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
                 color: #e1ae05;
             }
-            
+        
             .filter-group label {
                 font-weight: 600;
                 margin-bottom: 5px;
-                color: #ddd; /* teks terang */
+                color: #ddd;
             }
-            
+        
             .filter-group select {
                 padding: 8px;
                 border: 1px solid #444;
                 border-radius: 6px;
                 font-size: 14px;
-                background-color: #2a2a2a; /* gelap */
-                color: #f5f5f5; /* teks terang */
+                background-color: #2a2a2a;
+                color: #f5f5f5;
             }
-            
+        
             .filter-buttons button {
                 padding: 10px 16px;
                 background-color: #007bff;
@@ -3916,29 +4109,19 @@ def index():
                 cursor: pointer;
                 transition: 0.3s;
             }
-            
+        
             .filter-buttons button:hover {
                 background-color: #0056b3;
             }
-            .chart-container {
-                flex: 1 1 400px;     /* minimal 400px, tapi bisa melebar penuh */
-                background-color: #1e293b;
-                border-radius: 10px;
-                padding: 15px;
-                min-height: 400px;   /* tinggi minimal */
-                width: 100%;         /* agar ikuti parent */
-                position: relative;
-                z-index: 1;
-            }
-            
+        
             .modal {
-              z-index: 9999 !important;   /* pastikan paling tinggi */
+                z-index: 9999 !important;
             }
-            
+        
             .modal-backdrop {
-              z-index: 9998 !important;   /* backdrop di bawah modal tapi tetap di atas chart */
+                z-index: 9998 !important;
             }
-            
+        
             .map-container {
                 width: 100%;
                 height: 650px;
@@ -3948,6 +4131,7 @@ def index():
                 box-shadow: 0 4px 20px rgba(0,0,0,0.15);
                 background-color: white;
             }
+        
             h2 {
                 margin-top: 20px;
             }
@@ -4274,13 +4458,13 @@ def index():
     
     <!-- Charts -->
     <div class="chart-row">
-        <div class="chart-container" id="pie1"></div>
-        <div class="chart-container" id="bar1_pita"></div>      
+        <div class="chart-container">{{ pie1_html|safe }}</div>
+        <div class="chart-container">{{ bar1_pita_html|safe }}</div>
     </div>
-    
+
     <div class="chart-row">
-        <div class="chart-container" id="pie_band"></div>
-        <div class="chart-container" id="bar1"></div>
+        <div class="chart-container">{{ pie_band_html|safe }}</div>
+        <div class="chart-container">{{ bar1_html|safe }}</div>
     </div>
     
     <h3>Peta Sebaran Monitoring {{selected_year}}</h3>
@@ -4564,6 +4748,19 @@ def index():
     // init
     updateSpeedCards();
     </script>
+    
+    <script>
+    window.addEventListener("load", function () {
+        setTimeout(function () {
+            const charts = document.querySelectorAll(".plotly-graph-div");
+            charts.forEach(chart => {
+                if (window.Plotly) {
+                    Plotly.Plots.resize(chart);
+                }
+            });
+        }, 500); // beri delay agar flex layout selesai dulu
+    });
+    </script>
 
     </body>
     
@@ -4658,7 +4855,11 @@ def index():
     jumlah_qos=jumlah_qos,
     persen_qos=persen_qos,
     map_static_file=map_static_file,
-    operator_speed_json=json.dumps(operator_speed_json)
+    operator_speed_json=json.dumps(operator_speed_json),
+    pie1_html=pie1_html,
+    pie_band_html=pie_band_html,
+    bar1_html=bar1_html,
+    bar1_pita_html=bar1_pita_html
     )
     
 @app.route("/get_kab/<spt>")
