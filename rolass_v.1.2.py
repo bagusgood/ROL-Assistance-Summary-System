@@ -39,6 +39,7 @@ import numpy as np
 from geopy.distance import geodesic
 from werkzeug.utils import secure_filename
 import plotly.io as pio
+from bs4 import BeautifulSoup
 
 app = Flask(__name__)
 app.secret_key = "rahasia_super"  # ganti dengan secret key lebih kuat
@@ -2307,49 +2308,169 @@ def load_data_excel(year):
         print("Gagal ambil data API:", e)
         return pd.DataFrame()
 
-def load_info_inspeksi(use_cache=True):
-    url = "https://apstard.postel.go.id/dashboard/info-inspeksi-3"
 
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36 Edg/139.0.0.0",
-        "Accept": "application/json, text/javascript, */*; q=0.01",
-        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-        "X-Requested-With": "XMLHttpRequest",
-        "Referer": "https://apstard.postel.go.id/dashboard/dashboard-keseluruhan-upt",
-        # ⚠️ Cookie perlu diganti sesuai hasil login
-        "Cookie": "csrf_cookie_name=ISI_COOKIE; ci_session=ISI_SESSION",
+
+
+def load_mwlink():
+    """
+    Ambil data inspeksi MW Link dari APSTARD dan return sebagai DataFrame.
+
+    Parameters
+    ----------
+    upt_id : str
+        ID UPT (contoh: "14")
+    periode : str
+        Tahun/periode data (contoh: "2026")
+    client_kode : str
+        Filter client_kode jika ada
+    kota_kab : str
+        Filter kota_kab jika ada
+    csrf_cookie_name : str
+        Nilai cookie csrf_cookie_name dari browser
+    ci_session : str
+        Nilai cookie ci_session dari browser
+    length : int
+        Jumlah data yang diminta dalam sekali request
+
+    Returns
+    -------
+    df : pandas.DataFrame
+        Data hasil inspeksi
+    """
+    
+    upt_id="14",
+    periode="2026",
+    client_kode="",
+    kota_kab="",
+    csrf_cookie_name="6a21139837d67db8eabe60cd10f52d29",
+    ci_session="6e6h7chjcckdidbn3hekg0mocf9imkb9",
+    length=100000
+    
+    URL = "https://apstard.postel.go.id/inspeksi/lists"
+    
+    HEADERS = {
+        "accept": "application/json",
+        "origin": "https://apstard.postel.go.id",
+        "referer": "https://apstard.postel.go.id/inspeksi",
+        "user-agent": "Mozilla/5.0",
+        "x-requested-with": "XMLHttpRequest"
     }
 
-    payload = {
-        "periode": "2025",
-        "upt_id": "14"
+    def safe_cookie(v):
+        if v is None:
+            return ""
+        if isinstance(v, tuple):
+            return str(v[0]) if len(v) > 0 else ""
+        if isinstance(v, list):
+            return str(v[0]) if len(v) > 0 else ""
+        return str(v)
+
+    csrf_cookie_name = safe_cookie(csrf_cookie_name)
+    ci_session = safe_cookie(ci_session)
+
+    COOKIES = {
+        "csrf_cookie_name": csrf_cookie_name,
+        "ci_session": ci_session
     }
 
-    try:
-        r = requests.post(url, headers=headers, data=payload, timeout=10)
-        r.raise_for_status()
+    PAYLOAD = {
+        "page": 1,
+        "size": length,
+        "start": 0,
+        "length": length,
+        "upt_id": upt_id,
+        "client_kode": client_kode,
+        "periode": periode,
+        "kota_kab": kota_kab
+    }
 
-        data = r.json()
+    def clean_html_text(html_text):
+        if html_text is None:
+            return None
+        soup = BeautifulSoup(str(html_text), "html.parser")
+        return soup.get_text(" ", strip=True)
 
-        # Simpan ke cache lokal
-        if use_cache:
-            with open("inspeksi.json", "w", encoding="utf-8") as f:
-                json.dump(data, f, ensure_ascii=False, indent=2)
+    def extract_links_from_aksi(html_text):
+        result = {
+            "link_edit": None,
+            "link_delete": None,
+            "link_download": None
+        }
 
-        return pd.DataFrame([data]), None  # DataFrame + status OK
+        if not html_text:
+            return result
 
-    except Exception as e:
-        print(f"⚠️ Gagal ambil data dari Apstard: {e}")
+        soup = BeautifulSoup(html_text, "html.parser")
+        links = soup.find_all("a", href=True)
 
-        # Gunakan cache lokal kalau ada
-        if use_cache and os.path.exists("inspeksi.json"):
-            print("👉 Memuat data dari cache lokal inspeksi.json")
-            with open("inspeksi.json", "r", encoding="utf-8") as f:
-                data = json.load(f)
-            return pd.DataFrame([data]), "⚠️ Data dari cache (Apstard tidak bisa diakses)"
+        for a in links:
+            href = a["href"]
+            text = a.get_text(" ", strip=True).lower()
 
-        # Kalau tidak ada cache
-        return pd.DataFrame(), "⚠️ Aplikasi Apstard tidak bisa diakses"
+            if "edit" in text:
+                result["link_edit"] = href
+            elif "hapus" in text or "delete" in text:
+                result["link_delete"] = href
+            elif "download" in text:
+                result["link_download"] = href
+
+        return result
+
+    def normalize_row(row):
+        row = row.copy()
+
+        aksi_links = extract_links_from_aksi(row.get("aksi"))
+
+        row["aksi_text"] = clean_html_text(row.get("aksi"))
+        row["status_text"] = clean_html_text(row.get("status"))
+        row["verifikasi_text"] = clean_html_text(row.get("verifikasi"))
+        row["jenis_target_text"] = clean_html_text(row.get("jenis_target"))
+
+        row.update(aksi_links)
+        return row
+
+    session = requests.Session()
+    session.headers.update(HEADERS)
+    session.cookies.update(COOKIES)
+
+    response = session.post(URL, data=PAYLOAD, timeout=60)
+    response.raise_for_status()
+
+    result = response.json()
+    data = result.get("data", [])
+
+    rows = [normalize_row(row) for row in data]
+    df = pd.DataFrame(rows)
+
+    preferred_cols = [
+        "tgl_inspeksi",
+        "metode_nama",
+        "client_nama",
+        "isr_id",
+        "isr_no",
+        "station_nama",
+        "station_nama_lawan",
+        "inspektor",
+        "status_text",
+        "verifikasi_text",
+        "jenis_target_text",
+        "created_at",
+        "is_pelanggaran",
+        "id_ba_pemeriksaan",
+        "status_id",
+        "link_edit",
+        "link_delete",
+        "link_download",
+        "aksi_text"
+    ]
+
+    if not df.empty:
+        existing_cols = [c for c in preferred_cols if c in df.columns]
+        other_cols = [c for c in df.columns if c not in existing_cols]
+        df = df[existing_cols + other_cols]
+
+    return df
+
 
 def get_invoice_session():
     """
@@ -3154,74 +3275,108 @@ def download_excel():
 @app.route("/", methods=["GET", "POST"])
 @login_required
 def index():
-    # === Load Info Inspeksi ===
-    df_inspeksi, apstard_status = load_info_inspeksi()
+    # === Load MWLink ===
+    df_mwlink = load_mwlink()
     
-    if not df_inspeksi.empty:
-        total_inspeksi = int(df_inspeksi["total_inspeksi"].iloc[0].replace(",", ""))
-        sudah_inspeksi = int(df_inspeksi["sudah_inspeksi"].iloc[0].replace(",", ""))
-        belum_inspeksi = int(df_inspeksi["belum_inspeksi"].iloc[0].replace(",", ""))
-        sesuai = int(df_inspeksi["sesuai"].iloc[0].replace(",", ""))
-        tidak_sesuai = int(df_inspeksi["tidak_sesuai"].iloc[0].replace(",", ""))
-        ilegal = int(df_inspeksi["ilegal"].iloc[0].replace(",", ""))
-        off_air = int(df_inspeksi["off_air"].iloc[0].replace(",", ""))
-    
-        capaian_inspeksi = round((sudah_inspeksi / total_inspeksi * 100), 2) if total_inspeksi > 0 else 0
-    
-        # Data untuk chart
-        pie_inspeksi_status = pd.DataFrame({
-            "Status": ["Sesuai", "Tidak Sesuai", "Ilegal", "Off Air"],
-            "Jumlah": [sesuai, tidak_sesuai, ilegal, off_air]
-        })
-    
-        # Data untuk chart
-        bar_inspeksi_status = pd.DataFrame({
-            "Status": ["Tidak Sesuai", "Ilegal"],
-            "Jumlah": [tidak_sesuai, ilegal]
-        })
-    
-        pie_inspeksi = px.pie(
-            pie_inspeksi_status, names="Status", values="Jumlah",
-            title="Distribusi Hasil Inspeksi",
-            hole=0.4,
-            color_discrete_sequence=["#006db0", "#00ade6", "#edbc1b", "#8f181b", "#EF4444", "#6B7280",
-                                     "#6d98b3", "#91cfe3", "#af8703", "#a83639", "#575759", "#252526",
-                                     "#044065", "#d5ad2b", "#884a4c"]
-        )
-        pie_inspeksi.update_layout(legend=dict(orientation="v", x=1, y=0.5))
-    
-        bar_inspeksi = px.bar(
-            bar_inspeksi_status, x="Status", y="Jumlah", color="Status",
-            title="Jumlah Pelanggaran Inspeksi",
-            color_discrete_sequence=["#edbc1b", "#8f181b", "#006db0", "#00ade6", "#EF4444", "#6B7280",
-                                     "#6d98b3", "#91cfe3", "#af8703", "#a83639", "#575759", "#252526",
-                                     "#044065", "#d5ad2b", "#884a4c"]
-        )
-        
-        apstard_status = None  # Tidak ada error
-    else:
-        total_inspeksi = sudah_inspeksi = capaian_inspeksi = 0
-        
-        # Figure kosong biar tetap kompatibel
-        pie_inspeksi = go.Figure()
-        bar_inspeksi = go.Figure()
-        
-        # Opsional: kasih text "Data tidak tersedia"
-        pie_inspeksi.add_annotation(
-            text="Data tidak tersedia",
-            showarrow=False,
-            font=dict(size=16)
-        )
-        bar_inspeksi.add_annotation(
-            text="Data tidak tersedia",
-            showarrow=False,
-            font=dict(size=16)
-        )
-    
-        apstard_status = "⚠️ Aplikasi Apstard tidak bisa diakses"
+    # Pastikan kolom ada
+    if "jenis_target_text" not in df_mwlink.columns:
+        df_mwlink["jenis_target_text"] = ""
 
-    ############PENERTIBANNNNNNNNNN  
-    pantib_selected_year = request.form.get("year", "2025")
+    # Rapikan isi kolom
+    df_mwlink["jenis_target_text"] = df_mwlink["jenis_target_text"].fillna("").str.strip()
+
+    # Hitung jumlah per kategori
+    remote_site_count = (df_mwlink["jenis_target_text"] == "Remote Site").sum()
+    open_shelter_count = (df_mwlink["jenis_target_text"] == "Open Shelter").sum()
+    non_target_count = (df_mwlink["jenis_target_text"] == "Non Target").sum()
+    
+    remote_site_target = 857
+    open_shelter_target = 188
+    
+    remote_site_percent = round(float(remote_site_count*100/remote_site_target),2)
+    open_shelter_percent = round(float(open_shelter_count*100/open_shelter_target),2)
+    
+    stats = {
+        "remote_site_checked": remote_site_count,
+        "open_shelter_checked": open_shelter_count,
+        "non_target_checked": non_target_count,
+        "remote_site_percent": remote_site_percent,
+        "open_shelter_percent": open_shelter_percent
+    }
+    
+    ############ MW-LINK ###########
+    colors = [
+        "#006db0", "#00ade6", "#edbc1b", "#8f181b", "#EF4444", "#6B7280",
+        "#6d98b3", "#91cfe3", "#af8703", "#a83639", "#575759", "#252526",
+        "#044065", "#d5ad2b", "#884a4c"
+    ]
+    
+    # =========================
+    # CHART MWLINK
+    # =========================
+    pie_mwlink = px.pie(
+        df_mwlink,
+        names="client_nama",
+        title="PEMILIK ISR",
+        hole=0.5,
+        color_discrete_sequence=colors
+    )
+    pie_mwlink.update_layout(
+        plot_bgcolor="#0f172a",
+        paper_bgcolor="#0f172a",
+        font=dict(color="white"),
+        legend=dict(font=dict(color='white', size=10))
+    )
+    
+    bar_mwlink = (
+        df_mwlink.groupby(["jenis_target_text", "status_text"])
+        .size()
+        .reset_index(name="jumlah")
+        .sort_values(by="jumlah", ascending=False)
+    )
+
+    total_per_status = (
+        df_mwlink.groupby("jenis_target_text")
+        .size()
+        .sort_values(ascending=False)
+    )
+
+    ordered_status = total_per_status.index.tolist()
+    bar1_mwlink = px.bar(
+        bar_mwlink,
+        x="jenis_target_text",
+        y="jumlah",
+        color="status_text",
+        orientation='v',
+        title="JUMLAH PEMERIKSAAN MW-LINK",
+        labels={
+            "jenis_target_text": "",
+            "jumlah": "Jumlah Data",
+            "jenis": ""
+        },
+        category_orders={"jenis_target_text": ordered_status},
+        color_discrete_sequence=colors
+    )
+
+    bar1_mwlink.update_layout(
+        barmode='group',
+        uniformtext_minsize=10,
+        uniformtext_mode='hide',
+        bargap=0.2,
+        plot_bgcolor='#0f172a',
+        paper_bgcolor='#0f172a',
+        font=dict(color='white'),
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=-0.3,
+            xanchor="center",
+            x=0.5
+        )
+    )
+    
+    ############ PENERTIBANNNNNNNNNN  
+    pantib_selected_year = request.form.get("year", "2026")
     df_pantib = load_pantib(pantib_selected_year, use_cache=True)
     
     # Jika data kosong, fallback ke 2025
@@ -3711,6 +3866,9 @@ def index():
     bar1_html = pio.to_html(bar1, full_html=False, include_plotlyjs=False)
     bar1_pita_html = pio.to_html(bar1_pita, full_html=False, include_plotlyjs=False)
     
+    pie_mwlink_html = pio.to_html(pie_mwlink, full_html=False, include_plotlyjs='cdn')
+    bar_mwlink_html = pio.to_html(bar1_mwlink, full_html=False, include_plotlyjs=False)
+    
     bar_data = df_pantib.groupby("penertiban_service_name").size().reset_index(name="jumlah")
 
     bar_pantib = px.bar(
@@ -3913,14 +4071,15 @@ def index():
     bar_denda_json = json.dumps(bar_denda, cls=plotly.utils.PlotlyJSONEncoder)
 
     for fig in [pie1]:
-        for fig in [pie1, pie_band, bar1, bar1_pita, bar_pantib, bar2_pantib, pie_inspeksi, bar_inspeksi, pie_denda, bar_denda]:
+        for fig in [pie1, pie_band, bar1, bar1_pita, bar_pantib, bar2_pantib, 
+                    pie_denda, bar_denda]:
             fig.update_layout(
                 paper_bgcolor="#1e293b",  # background luar chart
                 plot_bgcolor="#1e293b",   # background area plot
                 font=dict(color="white")  # teks jadi putih
             )
         
-    for fig in [pie_band, bar1, bar1_pita, bar_pantib, bar2_pantib, pie_inspeksi, bar_inspeksi, pie_denda, bar_denda]:
+    for fig in [pie_band, bar1, bar1_pita, bar_pantib, bar2_pantib, pie_denda, bar_denda]:
         fig.update_layout(
             paper_bgcolor="#1e293b",
             plot_bgcolor="#1e293b",
@@ -3996,8 +4155,6 @@ def index():
     bar_pantib_json = json.dumps(bar_pantib, cls=PlotlyJSONEncoder)
     bar2_pantib_json = json.dumps(bar2_pantib, cls=PlotlyJSONEncoder)
     
-    pie_inspeksi_json = json.dumps(pie_inspeksi, cls=PlotlyJSONEncoder)
-    bar_inspeksi_json = json.dumps(bar_inspeksi, cls=PlotlyJSONEncoder)
     
     return render_template_string('''
     <!DOCTYPE html>
@@ -4467,7 +4624,7 @@ def index():
         <div class="chart-container">{{ bar1_html|safe }}</div>
     </div>
     
-    <h3>Peta Sebaran Monitoring {{selected_year}}</h3>
+    <h3>Sebaran Titik Monitoring {{selected_year}}</h3>
     
     <div class="map-container" style="height:600px; margin:20px;">
         {{ map_html|safe }}
@@ -4549,7 +4706,7 @@ def index():
     </div>
 
 
-    
+    <!-- ================= MW-LINK ================= -->
     <!-- Info Cards Inspeksi -->
     <form method="POST" class="filter-form3" id="main-form">
     <div style="display:flex; left-content:space-between; align-items:center; margin:10px 10px 10px;">
@@ -4557,35 +4714,42 @@ def index():
         <h2 style="margin:0;">PEMERIKSAAN MICROWAVE LINK {{selected_year}}</h2>
     </div>
     </form>
-    <div style="display:flex; gap:15px; padding:20px; flex-wrap:wrap;">
-        <div style="flex:1; min-width:200px; background:#1e293b; padding:15px; border-radius:8px; display:flex; align-items:center; gap:10px;">
-            <div style="font-size:2rem;">📊</div>
+    <!-- Info Cards -->
+    <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:10px; padding:20px;">
+        <!-- Card 1 -->
+        <div style="background:#1e293b; padding:18px; border-radius:12px; display:flex; gap:14px; align-items:center;">
+            <div style="font-size:3rem;">🗼 {{stats.remote_site_percent}}%</div>
             <div>
-                <h1 style="margin:0;">{{ total_inspeksi }}</h1>
-                <p>Total Inspeksi</p>
+                <h1 style="margin:0;">REMOTE SITE</h1>
+                <p style="margin:0;opacity:0.8;">{{ stats.remote_site_checked }} dari 857 ISR  telah diperiksa</p>
             </div>
         </div>
-        <div style="flex:1; min-width:200px; background:#1e293b; padding:15px; border-radius:8px; display:flex; align-items:center; gap:10px;">
-            <div style="font-size:2rem;">🔍</div>
-            <div>
-                <h1 style="margin:0;">{{ sudah_inspeksi }}</h1>
-                <p>Sudah Inspeksi</p>
+        
+        <!-- Card 2 -->
+        <div style="background:#1e293b; padding:18px; border-radius:12px; display:flex; gap:14px; align-items:center;">
+            <div style="font-size:3rem;">🗼 {{stats.remote_site_percent}}%</div>
+            <div> 
+                <h1 style="margin:0;">OPEN SHELTER</h1>
+                <p style="margin:0;opacity:0.8;">{{ stats.open_shelter_checked }} dari 188 ISR telah diperiksa</p>
+            </div>
+        </div>
+        
+        <!-- Card 3 -->
+        <div style="background:#1e293b; padding:18px; border-radius:12px; display:flex; gap:14px; align-items:center;">
+            <div style="font-size:3rem;">🗼{{ stats.non_target_checked }} ISR</div>
+            <div> 
+                <h1 style="margin:0;">NON-TARGET</h1>
+                <p style="margin:0;opacity:0.8;">telah diperiksa</p>
             </div>
         </div>
     </div>
     
-    {% if apstard_status %}
-        <!-- Kalau Apstard tidak bisa diakses -->
-        <div style="padding:20px; background:#ef4444; color:white; border-radius:8px; margin-top:15px;">
-            ⚠️ {{ apstard_status }}
-        </div>
-    {% else %}
-        <!-- Chart hanya muncul kalau data ada -->
-        <div class="chart-row">
-            <div class="chart-container" id="pie_inspeksi"></div>
-            <div class="chart-container" id="bar_inspeksi"></div>
-        </div>
-    {% endif %}
+    <!-- Charts -->
+    <div class="chart-row">
+        <div class="chart-container">{{ pie_mwlink_html|safe }}</div>
+        <div class="chart-container">{{ bar_mwlink_html|safe }}</div>
+    </div>
+
 
     <!-- ================= DASHBOARD QOS & SPEED ================= -->
     <form method="POST" class="filter-form3" id="main-form">
@@ -4682,16 +4846,8 @@ def index():
         Plotly.newPlot('bar2_pantib', bar2Pantib.data, bar2Pantib.layout, {responsive:true});
     </script>
     
-    <script>
-        var pieInspeksi = {{ pie_inspeksi_json|safe }};
-        var barInspeksi = {{ bar_inspeksi_json|safe }};
-        Plotly.newPlot('pie_inspeksi', pieInspeksi.data, pieInspeksi.layout, {responsive:true});
-        Plotly.newPlot('bar_inspeksi', barInspeksi.data, barInspeksi.layout, {responsive:true});
-    </script>
     
     <script>
-        var pieInspeksi = {{ pie_denda_json|safe }};
-        var barInspeksi = {{ bar_denda_json|safe }};
         Plotly.newPlot('pie_denda', {{ pie_denda_json | safe }});
         Plotly.newPlot('bar_denda', {{ bar_denda_json | safe }});
     </script>
@@ -4843,11 +4999,6 @@ def index():
     bar2_pantib=bar2_pantib.to_html(full_html=False),
     bar_pantib_json=bar_pantib_json,
     bar2_pantib_json=bar2_pantib_json,
-    sudah_inspeksi = sudah_inspeksi,
-    total_inspeksi = total_inspeksi,
-    capaian_inspeksi = capaian_inspeksi,
-    pie_inspeksi_json=pie_inspeksi_json,
-    bar_inspeksi_json=bar_inspeksi_json,
     denda_terbayar=denda_terbayar,
     denda_belum=denda_belum,
     pie_denda_json=pie_denda_json,
@@ -4859,7 +5010,10 @@ def index():
     pie1_html=pie1_html,
     pie_band_html=pie_band_html,
     bar1_html=bar1_html,
-    bar1_pita_html=bar1_pita_html
+    bar1_pita_html=bar1_pita_html,
+    stats=stats,
+    pie_mwlink_html=pie_mwlink_html,
+    bar_mwlink_html=bar_mwlink_html
     )
     
 @app.route("/get_kab/<spt>")
