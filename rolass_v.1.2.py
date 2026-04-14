@@ -3397,10 +3397,182 @@ def download_excel():
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 
-
 @app.route("/", methods=["GET", "POST"])
 @login_required
 def index():
+    return render_template_string("""
+<!DOCTYPE html>
+<html>
+<head>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&family=Playfair+Display:wght@600;800&display=swap" rel="stylesheet">
+    <meta charset="UTF-8">
+    <title>REALISASI BALAI MONITOR SFR KELAS II MATARAM</title>
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='D.png') }}">
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <style>
+        body {
+            background-color: #0d1b2a;
+            color: white;
+            font-family: 'Segoe UI', sans-serif;
+            padding: 20px;
+            margin: 0;
+        }
+    
+        select { margin-right: 10px; }
+    
+    
+        .modal {
+            z-index: 9999 !important;
+        }
+    
+        .modal-backdrop {
+            z-index: 9998 !important;
+        }
+    
+        .map-container {
+            width: 100%;
+            height: 650px;
+            margin-top: 20px;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+            background-color: white;
+        }
+        
+        .nav-container {
+            display: flex;
+            flex-direction: column; /* atas-bawah */
+            gap: 20px; /* jarak antar button */
+            width: 100%;
+        }
+        
+        .nav-button-img {
+            border: none;
+            background: none;
+            cursor: pointer;
+            padding: 0;
+            transition: 0.3s;
+            width: 100%;
+        }
+        
+        .nav-button-img img {
+            width: 100%;   /* full lebar */
+            height: auto;  /* proporsional */
+            border-radius: 20px;
+            display: block;
+        }
+        
+        .nav-button-img:hover {
+            transform: scale(1.02);
+        }
+        
+        .welcome-box {
+            background: linear-gradient(135deg, #1e3a8a, #0ea5e9);
+            padding: 35px;
+            border-radius: 18px;
+            margin: 20px 0;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+            text-align: center;
+        }
+        
+        /* Judul utama */
+        .welcome-box h1 {
+            margin: 0 0 15px 0;
+            font-size: 48px; /* diperbesar */
+            font-weight: 800;
+            font-family: 'Playfair Display', serif;
+            color: #ffffff;
+            letter-spacing: 2px;
+        }
+        
+        /* Sub teks / pantun */
+        .welcome-box h2 {
+            margin: 0;
+            font-size: 20px;
+            font-family: 'Poppins', sans-serif;
+            color: #e0f2fe;
+            line-height: 1.7;
+            font-weight: 400;
+        }
+    
+        h2 {
+            margin-top: 20px;
+        }
+        
+    </style>
+    
+    </head>  
+    
+    
+    <body style="background-color:#0d1b2a; color:white; font-family:Segoe UI, sans-serif; zoom:80%;">
+    
+    <div style="display:flex; align-items:center; gap:15px; padding:20px;">
+        <img src="/static/logo-komdigi2.png" style="height:50px;">
+        <img src="/static/djid.png" style="height:50px;">
+        <div>
+            <h2 style="margin:0;">Dashboard Realisasi Kinerja – Balmon SFR Kelas II Mataram</h2/>
+            <p style="margin:0; font-size:16px; color:#9ca3af;">One-Data Aggregation & Analytics (WANDAA)</p>
+        </div>
+        
+        <!-- Tombol + Pilih Tahun -->
+        <div style="display:flex; align-items:flex-end; gap:10px; padding:20px; justify-content:flex-end;">      
+            <!-- Tombol -->
+            <form method="POST" class="filter-form2" id="main-form">
+                <!-- Pilih Tahun -->
+                <div style="display:flex; flex-direction:column;">
+                    <select name="year" id="year" onchange="autoSubmit('year')";
+                            style="padding:10px 20px; font-size: 16px; border-radius:6px; border:none; background:#006db0; color:white;">
+                        <option value="2022" {% if selected_year == "2022" %}selected{% endif %}>TAHUN 2022</option>
+                        <option value="2023" {% if selected_year == "2023" %}selected{% endif %}>TAHUN 2023</option>
+                        <option value="2024" {% if selected_year == "2024" %}selected{% endif %}>TAHUN 2024</option>
+                        <option value="2025" {% if selected_year == "2025" %}selected{% endif %}>TAHUN 2025</option>
+                        <option value="2026" {% if selected_year == "2026" %}selected{% endif %}>TAHUN 2026</option>
+                    </select>
+                </div>
+            </form>
+            
+            <a href="{{ url_for('identifikasi') }}"
+                   style="color:white; background:#e1ae05; border:none; padding:10px 20px; font-size:16px; border-radius:6px; text-decoration:none;">
+                    Identifikasi
+                </a>
+            </a>
+            
+            <a href="{{ url_for('run_bts') }}"
+                   style="color:white; background:#e1ae05; border:none; padding:10px 20px; font-size:16px; border-radius:6px; text-decoration:none;">
+                    Prima Aksi
+                </a>
+            </a>
+    
+            
+            <a href="{{ url_for('logout') }}"
+               style="color:white; background:red; border:none; padding:10px 20px; font-size: 16px; border-radius:6px;">
+                Logout
+            </a>
+        </div>
+    </div>
+    
+    <div class="welcome-box">
+        <h1>👋 SELAMAT DATANG DI WANDAA 👋</h1>
+        <h2>Lalo merariq nyempet peken, tuku jaje leq pinggir jalan.
+        Sugeng rauh ring WANDAA niki, mugi dados kemudahan ring sak begawean.</h2>
+    </div>
+    
+    <div class="nav-container">
+        <button class="nav-button-img" onclick="window.location.href='/montib'">
+            <img src="/static/montib.png" alt="Montib">
+        </button>
+    
+        <button class="nav-button-img" onclick="window.location.href='/klid'">
+            <img src="/static/klid.png" alt="KLID">
+        </button>
+    </div>
+
+</body>
+</html>
+""")
+
+@app.route("/montib", methods=["GET", "POST"])
+def montib():
     # === Load APT ===
     df_apt = load_apt_csv()
     
@@ -3416,36 +3588,8 @@ def index():
     jumlah_kab_kota = df_apt['kab_kota'].nunique()
     persen_kab_kota = round((jumlah_kab_kota / 10) * 100,2)
         
-    # === Load MWLink ===
-    df_mwlink = load_mwlink()
-    
-    # Pastikan kolom ada
-    if "jenis_target_text" not in df_mwlink.columns:
-        df_mwlink["jenis_target_text"] = ""
-
-    # Rapikan isi kolom
-    df_mwlink["jenis_target_text"] = df_mwlink["jenis_target_text"].fillna("").str.strip()
-
-    # Hitung jumlah per kategori
-    remote_site_count = (df_mwlink["jenis_target_text"] == "Remote Site").sum()
-    open_shelter_count = (df_mwlink["jenis_target_text"] == "Open Shelter").sum()
-    non_target_count = (df_mwlink["jenis_target_text"] == "Non Target").sum()
-    
-    remote_site_target = 857
-    open_shelter_target = 188
-    
-    remote_site_percent = round(float(remote_site_count*100/remote_site_target),2)
-    open_shelter_percent = round(float(open_shelter_count*100/open_shelter_target),2)
-    
-    stats = {
-        "remote_site_checked": remote_site_count,
-        "open_shelter_checked": open_shelter_count,
-        "non_target_checked": non_target_count,
-        "remote_site_percent": remote_site_percent,
-        "open_shelter_percent": open_shelter_percent
-    }
-    
-    ############ MW-LINK ###########
+        
+    ############ colorr ###########
     colors = [
         "#006db0", "#00ade6", "#edbc1b", "#8f181b", "#EF4444", "#6B7280",
         "#6d98b3", "#91cfe3", "#af8703", "#a83639", "#575759", "#252526",
@@ -3572,70 +3716,6 @@ def index():
         xaxis_tickangle=-45
     )
     
-    # =========================
-    # CHART MWLINK
-    # =========================
-    pie_mwlink = px.pie(
-        df_mwlink,
-        names="client_nama",
-        title="PEMILIK ISR",
-        hole=0.5,
-        color_discrete_sequence=colors
-    )
-    pie_mwlink.update_layout(
-        plot_bgcolor="#0f172a",
-        paper_bgcolor="#0f172a",
-        font=dict(color="white"),
-        legend=dict(font=dict(color='white', size=10))
-    )
-    
-    bar_mwlink = (
-        df_mwlink.groupby(["jenis_target_text", "status_text"])
-        .size()
-        .reset_index(name="jumlah")
-        .sort_values(by="jumlah", ascending=False)
-    )
-
-    total_per_status = (
-        df_mwlink.groupby("jenis_target_text")
-        .size()
-        .sort_values(ascending=False)
-    )
-
-    ordered_status = total_per_status.index.tolist()
-    bar1_mwlink = px.bar(
-        bar_mwlink,
-        x="jenis_target_text",
-        y="jumlah",
-        color="status_text",
-        orientation='v',
-        title="JUMLAH PEMERIKSAAN MW-LINK",
-        labels={
-            "jenis_target_text": "",
-            "jumlah": "Jumlah Data",
-            "jenis": ""
-        },
-        category_orders={"jenis_target_text": ordered_status},
-        color_discrete_sequence=colors
-    )
-
-    bar1_mwlink.update_layout(
-        barmode='group',
-        uniformtext_minsize=10,
-        uniformtext_mode='hide',
-        bargap=0.2,
-        plot_bgcolor='#0f172a',
-        paper_bgcolor='#0f172a',
-        font=dict(color='white'),
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=-0.3,
-            xanchor="center",
-            x=0.5
-        )
-    )
-    
     ############ PENERTIBANNNNNNNNNN  
     pantib_selected_year = request.form.get("year", "2026")
     df_pantib = load_pantib(pantib_selected_year, use_cache=True)
@@ -3739,39 +3819,60 @@ def index():
     
     import folium
     from folium.plugins import MarkerCluster
+    # =========================
+    # CLEAN DATA
+    # =========================
+    # SFR
+    df['observasi_scan_detail_lat'] = pd.to_numeric(df['observasi_scan_detail_lat'], errors='coerce')
+    df['observasi_scan_detail_long'] = pd.to_numeric(df['observasi_scan_detail_long'], errors='coerce')
     
-    map_html = None
+    df_sfr = df.dropna(subset=['observasi_scan_detail_lat', 'observasi_scan_detail_long'])
     
-    filt2 = filt2.drop_duplicates(
-        subset=[
-            "observasi_scan_detail_lat",
-            "observasi_scan_detail_long"
-        ]
-    )
+    # APT
+    df_apt['latitude'] = pd.to_numeric(df_apt['latitude'], errors='coerce')
+    df_apt['longitude'] = pd.to_numeric(df_apt['longitude'], errors='coerce')
     
-    if not filt2.empty:
+    df_apt_clean = df_apt.dropna(subset=['latitude', 'longitude'])
     
-        center_lat = filt2["observasi_scan_detail_lat"].mean()
-        center_lon = filt2["observasi_scan_detail_long"].mean()
+    # =========================
+    # CENTER MAP (rata-rata titik)
+    # =========================
+    center_lat = df_apt_clean['latitude'].mean()
+    center_lon = df_apt_clean['longitude'].mean()
     
-        m = folium.Map(
-            location=[center_lat, center_lon],
-            zoom_start=10
-        )
+    m = folium.Map(location=[center_lat, center_lon], zoom_start=10)
     
-        marker_cluster = MarkerCluster().add_to(m)
+    # =========================
+    # LAYER SFR (MERAH)
+    # =========================
+    for _, row in df_sfr.iterrows():
+        folium.CircleMarker(
+            location=[row['observasi_scan_detail_lat'], row['observasi_scan_detail_long']],
+            radius=5,
+            color='red',
+            fill=True,
+            fill_opacity=0.7,
+            popup="SFR"
+        ).add_to(m)
     
-        for _, row in filt2.iterrows():
-            folium.Marker(
-                location=[
-                    row["observasi_scan_detail_lat"],
-                    row["observasi_scan_detail_long"]
-                ],
-                popup=row["scan_catatan"],
-                tooltip=row["scan_catatan"]
-            ).add_to(marker_cluster)
+    # =========================
+    # LAYER APT (BIRU)
+    # =========================
+    for _, row in df_apt_clean.iterrows():
+        folium.CircleMarker(
+            location=[row['latitude'], row['longitude']],
+            radius=5,
+            color='blue',
+            fill=True,
+            fill_opacity=0.7,
+            popup=row['nama_entitas']
+        ).add_to(m)
     
-        map_html = m._repr_html_()
+    # =========================
+    # SAVE / SHOW
+    # =========================
+    m.save("map_monitoring.html")
+    map_html = m._repr_html_()
     
     
     # === Ringkasan Data untuk Info Cards ===
@@ -4127,9 +4228,6 @@ def index():
     bar1_html = pio.to_html(bar1, full_html=False, include_plotlyjs=False)
     bar1_pita_html = pio.to_html(bar1_pita, full_html=False, include_plotlyjs=False)
     
-    pie_mwlink_html = pio.to_html(pie_mwlink, full_html=False, include_plotlyjs='cdn')
-    bar_mwlink_html = pio.to_html(bar1_mwlink, full_html=False, include_plotlyjs=False)
-    
     bar_kategori_html = pio.to_html(bar1_kategori, full_html=False, include_plotlyjs=False)
     bar_bulanan_html = pio.to_html(bar1_bulanan, full_html=False, include_plotlyjs=False)
     
@@ -4358,59 +4456,6 @@ def index():
             )
         )
 
-    # URL Google Sheet (ubah ke format export CSV)
-    sheet_id_qos = "14rFJPrA2fCVkz-7mQoLQ8khV5nLlsKVv"
-    gid_qos = "301785538"
-    
-    url_qos = f"https://docs.google.com/spreadsheets/d/{sheet_id_qos}/export?format=csv&gid={gid_qos}"
-    
-    # Ambil data ke DataFrame
-    df_qos = pd.read_csv(url_qos)
-    df_qos = pd.read_csv(url_qos, header=1)
-    jumlah_qos = df_qos['Kabupaten / Kota'].nunique()
-    persen_qos = int(jumlah_qos/10*100)
-
-    df_map = load_map_data()
-    map_static_file = generate_map_html_from_df(df_map)
-
-    # =========================
-    # DATA UNTUK CARD SPEEDTEST
-    # =========================
-    
-    speed_cols = [
-        "Average Speedtest Download Speed (Mbps)",
-        "Average Speedtest Upload Speed (Mbps)"
-    ]
-    
-    # Paksa konversi ke numeric (non-angka → NaN)
-    for col in speed_cols:
-        df_map[col] = (
-            df_map[col]
-            .astype(str)
-            .str.replace(",", ".", regex=False)
-            .str.strip()
-        )
-        df_map[col] = pd.to_numeric(df_map[col], errors="coerce")
-    
-    # Hapus baris yang tidak punya nilai speed valid
-    operator_speed_df = df_map.dropna(
-        subset=[
-            "Operator",
-            "Average Speedtest Download Speed (Mbps)",
-            "Average Speedtest Upload Speed (Mbps)"
-        ]
-    )
-    
-    # Ambil kolom yang dibutuhkan saja
-    operator_speed_df = operator_speed_df[[
-        "Operator",
-        "Average Speedtest Download Speed (Mbps)",
-        "Average Speedtest Upload Speed (Mbps)"
-    ]]
-    
-    # Convert ke JSON
-    operator_speed_json = operator_speed_df.to_dict(orient="records")
-
     
     pie1_json = json.dumps(pie1, cls=plotly.utils.PlotlyJSONEncoder)
     pie_band_json = json.dumps(pie_band, cls=plotly.utils.PlotlyJSONEncoder)
@@ -4552,10 +4597,38 @@ def index():
                 box-shadow: 0 4px 20px rgba(0,0,0,0.15);
                 background-color: white;
             }
+            
+            .nav-container {
+                display: flex;
+                flex-direction: column; /* atas-bawah */
+                gap: 20px; /* jarak antar button */
+                width: 100%;
+            }
+            
+            .nav-button-img {
+                border: none;
+                background: none;
+                cursor: pointer;
+                padding: 0;
+                transition: 0.3s;
+                width: 100%;
+            }
+            
+            .nav-button-img img {
+                width: 100%;   /* full lebar */
+                height: auto;  /* proporsional */
+                border-radius: 20px;
+                display: block;
+            }
+            
+            .nav-button-img:hover {
+                transform: scale(1.02);
+            }
         
             h2 {
                 margin-top: 20px;
             }
+            
         </style>
         
     </head>
@@ -4658,6 +4731,7 @@ def index():
             </a>
         </div>
     </div>
+        
     
     <!-- Filter OBSMON-->
     <form method="POST" class="filter-form3" id="main-form">
@@ -4721,7 +4795,7 @@ def index():
         </div>
     
     </form>
-
+    
 
     <!-- Info Cards -->
     <div style="display:grid; grid-template-columns: repeat(5, 1fr); gap:15px; padding:20px;">
@@ -4888,11 +4962,6 @@ def index():
         <div class="chart-container">{{ bar1_html|safe }}</div>
     </div>
     
-    <h3>Sebaran Titik Monitoring {{selected_year}}</h3>
-    
-    <div class="map-container" style="height:600px; margin:20px;">
-        {{ map_html|safe }}
-    </div>
     
     <!-- Info Cards Pantib -->
     <form method="POST" class="filter-form3" id="main-form">
@@ -5021,131 +5090,11 @@ def index():
         <div class="chart-container">{{ bar_kategori_html|safe }}</div>
         <div class="chart-container">{{ bar_bulanan_html|safe }}</div>
     </div>
-
-    <!-- ================= MW-LINK ================= -->
-    <!-- Info Cards Inspeksi -->
-    <form method="POST" class="filter-form3" id="main-form">
-    <div style="display:flex; left-content:space-between; align-items:center; margin:10px 10px 10px;">
-        <img src="/static/vector.png" alt="Data" style="width:60px; height:40px;">
-        <h2 style="margin:0;">PEMERIKSAAN MICROWAVE LINK {{selected_year}}</h2>
-    </div>
-    </form>
-    <!-- Info Cards -->
-    <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:10px; padding:20px;">
-        <!-- Card 1 -->
-        <div style="background:#1e293b; padding:18px; border-radius:12px; display:flex; gap:14px; align-items:center;">
-            <div style="font-size:3rem;">🗼 {{stats.remote_site_percent}}%</div>
-            <div>
-                <h1 style="margin:0;">REMOTE SITE</h1>
-                <p style="margin:0;opacity:0.8;">{{ stats.remote_site_checked }} dari 857 ISR  telah diperiksa</p>
-            </div>
-        </div>
-        
-        <!-- Card 2 -->
-        <div style="background:#1e293b; padding:18px; border-radius:12px; display:flex; gap:14px; align-items:center;">
-            <div style="font-size:3rem;">🗼 {{stats.remote_site_percent}}%</div>
-            <div> 
-                <h1 style="margin:0;">OPEN SHELTER</h1>
-                <p style="margin:0;opacity:0.8;">{{ stats.open_shelter_checked }} dari 188 ISR telah diperiksa</p>
-            </div>
-        </div>
-        
-        <!-- Card 3 -->
-        <div style="background:#1e293b; padding:18px; border-radius:12px; display:flex; gap:14px; align-items:center;">
-            <div style="font-size:3rem;">🗼{{ stats.non_target_checked }} ISR</div>
-            <div> 
-                <h1 style="margin:0;">NON-TARGET</h1>
-                <p style="margin:0;opacity:0.8;">telah diperiksa</p>
-            </div>
-        </div>
-    </div>
     
-    <!-- Charts -->
-    <div class="chart-row">
-        <div class="chart-container">{{ pie_mwlink_html|safe }}</div>
-        <div class="chart-container">{{ bar_mwlink_html|safe }}</div>
-    </div>
-
-
-    <!-- ================= DASHBOARD QOS & SPEED ================= -->
-    <form method="POST" class="filter-form3" id="main-form">
-    <div style="display:flex; left-content:space-between; align-items:center; margin:10px 10px 10px;">
-        <img src="/static/vector.png" alt="Data" style="width:60px; height:40px;">
-        <h2 style="margin:0;">KUALITAS LAYANAN JARINGAN SELULER {{selected_year}}</h2>
-    </div>
-    </form>
-    
-    <div style="
-        display:grid;
-        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-        gap:20px;
-        padding:20px;
-    ">
-    
-        <!-- CARD JUMLAH KAB/KOTA -->
-        <div style="background:#1e293b; padding:18px; border-radius:12px; display:flex; gap:14px; align-items:center;">
-            <div style="font-size:2.5rem;">📊</div>
-            <div>
-                <h1 style="margin:0;">{{ jumlah_qos }}</h1>
-                <p style="margin:0; opacity:0.8;">Kab/Kota Termonitor</p>
-            </div>
-        </div>
-    
-        <!-- CARD PERSENTASE -->
-        <div style="background:#1e293b; padding:18px; border-radius:12px; display:flex; gap:14px; align-items:center;">
-            <div style="font-size:2.5rem;">📈</div>
-            <div>
-                <h1 style="margin:0;">{{ persen_qos }}%</h1>
-                <p style="margin:0; opacity:0.8;">Cakupan Monitoring</p>
-            </div>
-        </div>
-    
-        <!-- CARD DOWNLOAD -->
-        <div style="background:#1e293b; padding:18px; border-radius:12px;">
-            <h4 style="margin-bottom:8px;">📥 Download Speed</h4>
-            <h1 id="avgDownloadText">- Mbps</h1>
-    
-            <div style="background:#334155; border-radius:6px; height:14px; width:100%; overflow:hidden;">
-                <div id="avgDownloadBar"
-                     style="height:100%; width:0%; background:linear-gradient(90deg,#ef4444,#eab308,#22c55e);">
-                </div>
-            </div>
-            <small style="opacity:0.7;">Skala hingga 100 Mbps</small>
-        </div>
-    
-        <!-- CARD UPLOAD -->
-        <div style="background:#1e293b; padding:18px; border-radius:12px;">
-            <h4 style="margin-bottom:8px;">📤 Upload Speed</h4>
-            <h1 id="avgUploadText">- Mbps</h1>
-    
-            <div style="background:#334155; border-radius:6px; height:14px; width:100%; overflow:hidden;">
-                <div id="avgUploadBar"
-                     style="height:100%; width:0%; background:linear-gradient(90deg,#ef4444,#eab308,#22c55e);">
-                </div>
-            </div>
-            <small style="opacity:0.7;">Skala hingga 100 Mbps</small>
-        </div>
-    
-        <!-- FILTER OPERATOR -->
-        <div style="background:#1e293b; padding:18px; border-radius:12px;">
-            <h4 style="margin-bottom:10px;">📡 Operator Seluler</h4>
-            <label><input type="checkbox" class="op-filter" value="Telkomsel" checked> Telkomsel</label><br>
-            <label><input type="checkbox" class="op-filter" value="Indosat" checked> Indosat</label><br>
-            <label><input type="checkbox" class="op-filter" value="XL" checked> XL</label><br>
-            <label><input type="checkbox" class="op-filter" value="Smart" checked> Smart</label>
-        </div>
-    
-    </div>
-
-    <h2 style="margin:30px 20px 10px;">🗺️ Peta Sebaran Koordinat QoS</h2>
+    <h2>SEBARAN TITIK MONITORING SFR & APT{{selected_year}}</h2>
     
     <div class="map-container" style="height:600px; margin:20px;">
-        <iframe
-            src="/static/{{ map_static_file }}"
-            width="100%"
-            height="100%"
-            style="border:none; border-radius:12px;">
-        </iframe>
+        {{ map_html|safe }}
     </div>
 
     <script>
@@ -5319,22 +5268,649 @@ def index():
     denda_belum=denda_belum,
     pie_denda_json=pie_denda_json,
     bar_denda_json=bar_denda_json,
-    jumlah_qos=jumlah_qos,
-    persen_qos=persen_qos,
-    map_static_file=map_static_file,
-    operator_speed_json=json.dumps(operator_speed_json),
     pie1_html=pie1_html,
     pie_band_html=pie_band_html,
     bar1_html=bar1_html,
     bar1_pita_html=bar1_pita_html,
-    stats=stats,
-    pie_mwlink_html=pie_mwlink_html,
-    bar_mwlink_html=bar_mwlink_html,
     jumlah_apt = jumlah_apt,
     persen_sertifikat=persen_sertifikat,
     persen_kab_kota=persen_kab_kota,
     bar_kategori_html=bar_kategori_html,
     bar_bulanan_html=bar_bulanan_html
+    )
+
+@app.route("/klid", methods=["GET", "POST"])
+def klid():     
+    # === Load MWLink ===
+    df_mwlink = load_mwlink()
+    
+    # Pastikan kolom ada
+    if "jenis_target_text" not in df_mwlink.columns:
+        df_mwlink["jenis_target_text"] = ""
+
+    # Rapikan isi kolom
+    df_mwlink["jenis_target_text"] = df_mwlink["jenis_target_text"].fillna("").str.strip()
+
+    # Hitung jumlah per kategori
+    remote_site_count = (df_mwlink["jenis_target_text"] == "Remote Site").sum()
+    open_shelter_count = (df_mwlink["jenis_target_text"] == "Open Shelter").sum()
+    non_target_count = (df_mwlink["jenis_target_text"] == "Non Target").sum()
+    
+    remote_site_target = 857
+    open_shelter_target = 188
+    
+    remote_site_percent = round(float(remote_site_count*100/remote_site_target),2)
+    open_shelter_percent = round(float(open_shelter_count*100/open_shelter_target),2)
+    
+    stats = {
+        "remote_site_checked": remote_site_count,
+        "open_shelter_checked": open_shelter_count,
+        "non_target_checked": non_target_count,
+        "remote_site_percent": remote_site_percent,
+        "open_shelter_percent": open_shelter_percent
+    }
+    
+    ############ MW-LINK ###########
+    colors = [
+        "#006db0", "#00ade6", "#edbc1b", "#8f181b", "#EF4444", "#6B7280",
+        "#6d98b3", "#91cfe3", "#af8703", "#a83639", "#575759", "#252526",
+        "#044065", "#d5ad2b", "#884a4c"
+    ]
+    
+    # =========================
+    # CHART MWLINK
+    # =========================
+    pie_mwlink = px.pie(
+        df_mwlink,
+        names="client_nama",
+        title="PEMILIK ISR",
+        hole=0.5,
+        color_discrete_sequence=colors
+    )
+    pie_mwlink.update_layout(
+        plot_bgcolor="#0f172a",
+        paper_bgcolor="#0f172a",
+        font=dict(color="white"),
+        legend=dict(font=dict(color='white', size=10))
+    )
+    
+    bar_mwlink = (
+        df_mwlink.groupby(["jenis_target_text", "status_text"])
+        .size()
+        .reset_index(name="jumlah")
+        .sort_values(by="jumlah", ascending=False)
+    )
+
+    total_per_status = (
+        df_mwlink.groupby("jenis_target_text")
+        .size()
+        .sort_values(ascending=False)
+    )
+
+    ordered_status = total_per_status.index.tolist()
+    bar1_mwlink = px.bar(
+        bar_mwlink,
+        x="jenis_target_text",
+        y="jumlah",
+        color="status_text",
+        orientation='v',
+        title="JUMLAH PEMERIKSAAN MW-LINK",
+        labels={
+            "jenis_target_text": "",
+            "jumlah": "Jumlah Data",
+            "jenis": ""
+        },
+        category_orders={"jenis_target_text": ordered_status},
+        color_discrete_sequence=colors
+    )
+
+    bar1_mwlink.update_layout(
+        barmode='group',
+        uniformtext_minsize=10,
+        uniformtext_mode='hide',
+        bargap=0.2,
+        plot_bgcolor='#0f172a',
+        paper_bgcolor='#0f172a',
+        font=dict(color='white'),
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=-0.3,
+            xanchor="center",
+            x=0.5
+        )
+    )
+
+    
+    pie_mwlink_html = pio.to_html(pie_mwlink, full_html=False, include_plotlyjs='cdn')
+    bar_mwlink_html = pio.to_html(bar1_mwlink, full_html=False, include_plotlyjs=False)
+    
+
+    # URL Google Sheet (ubah ke format export CSV)
+    sheet_id_qos = "14rFJPrA2fCVkz-7mQoLQ8khV5nLlsKVv"
+    gid_qos = "301785538"
+    
+    url_qos = f"https://docs.google.com/spreadsheets/d/{sheet_id_qos}/export?format=csv&gid={gid_qos}"
+    
+    # Ambil data ke DataFrame
+    df_qos = pd.read_csv(url_qos)
+    df_qos = pd.read_csv(url_qos, header=1)
+    jumlah_qos = df_qos['Kabupaten / Kota'].nunique()
+    persen_qos = int(jumlah_qos/10*100)
+
+    df_map = load_map_data()
+    map_static_file = generate_map_html_from_df(df_map)
+
+    # =========================
+    # DATA UNTUK CARD SPEEDTEST
+    # =========================
+    
+    speed_cols = [
+        "Average Speedtest Download Speed (Mbps)",
+        "Average Speedtest Upload Speed (Mbps)"
+    ]
+    
+    # Paksa konversi ke numeric (non-angka → NaN)
+    for col in speed_cols:
+        df_map[col] = (
+            df_map[col]
+            .astype(str)
+            .str.replace(",", ".", regex=False)
+            .str.strip()
+        )
+        df_map[col] = pd.to_numeric(df_map[col], errors="coerce")
+    
+    # Hapus baris yang tidak punya nilai speed valid
+    operator_speed_df = df_map.dropna(
+        subset=[
+            "Operator",
+            "Average Speedtest Download Speed (Mbps)",
+            "Average Speedtest Upload Speed (Mbps)"
+        ]
+    )
+    
+    # Ambil kolom yang dibutuhkan saja
+    operator_speed_df = operator_speed_df[[
+        "Operator",
+        "Average Speedtest Download Speed (Mbps)",
+        "Average Speedtest Upload Speed (Mbps)"
+    ]]
+    
+    # Convert ke JSON
+    operator_speed_json = operator_speed_df.to_dict(orient="records")
+    
+    
+    return render_template_string('''
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <title>REALISASI BALAI MONITOR SFR KELAS II MATARAM</title>
+        <link rel="icon" type="image/png" href="{{ url_for('static', filename='D.png') }}">
+        <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+        <style>
+            body {
+                background-color: #0d1b2a;
+                color: white;
+                font-family: 'Segoe UI', sans-serif;
+                padding: 20px;
+                margin: 0;
+            }
+        
+            select { margin-right: 10px; }
+        
+            .chart-row {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 20px;
+                margin: 20px 0;
+                align-items: stretch;
+            }
+        
+            .chart-container {
+                flex: 1 1 48%;
+                min-width: 420px;
+                background-color: #1e293b;
+                border-radius: 10px;
+                padding: 15px;
+                min-height: 450px;
+                width: 100%;
+                position: relative;
+                overflow: hidden; /* penting */
+                box-sizing: border-box;
+            }
+        
+            /* Plotly chart di dalam container */
+            .chart-container .plotly-graph-div {
+                width: 100% !important;
+                height: 100% !important;
+            }
+        
+            .chart {
+                width: 100%;
+                height: 100%;
+                min-width: 0;
+            }
+        
+            .filter-form {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 20px;
+                margin: 2px 0;
+                background-color: #1e1e1e;
+                padding: 20px;
+                border-radius: 10px;
+                box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+            }
+        
+            .filter-form2 {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 1px;
+                margin: 1px 0;
+                padding: 0px;
+                border-radius: 1px;
+                box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+            }
+        
+            .filter-form3 {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 10px;
+                margin: 2px 0;
+                background-color: #1e1e1e;
+                padding: 10px;
+                border-radius: 10px;
+                box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+                color: #e1ae05;
+            }
+        
+            .filter-group label {
+                font-weight: 600;
+                margin-bottom: 5px;
+                color: #ddd;
+            }
+        
+            .filter-group select {
+                padding: 8px;
+                border: 1px solid #444;
+                border-radius: 6px;
+                font-size: 14px;
+                background-color: #2a2a2a;
+                color: #f5f5f5;
+            }
+        
+            .filter-buttons button {
+                padding: 10px 16px;
+                background-color: #007bff;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                font-weight: bold;
+                cursor: pointer;
+                transition: 0.3s;
+            }
+        
+            .filter-buttons button:hover {
+                background-color: #0056b3;
+            }
+        
+            .modal {
+                z-index: 9999 !important;
+            }
+        
+            .modal-backdrop {
+                z-index: 9998 !important;
+            }
+        
+            .map-container {
+                width: 100%;
+                height: 650px;
+                margin-top: 20px;
+                border-radius: 12px;
+                overflow: hidden;
+                box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+                background-color: white;
+            }
+            
+            .nav-container {
+                display: flex;
+                flex-direction: column; /* atas-bawah */
+                gap: 20px; /* jarak antar button */
+                width: 100%;
+            }
+            
+            .nav-button-img {
+                border: none;
+                background: none;
+                cursor: pointer;
+                padding: 0;
+                transition: 0.3s;
+                width: 100%;
+            }
+            
+            .nav-button-img img {
+                width: 100%;   /* full lebar */
+                height: auto;  /* proporsional */
+                border-radius: 20px;
+                display: block;
+            }
+            
+            .nav-button-img:hover {
+                transform: scale(1.02);
+            }
+        
+            h2 {
+                margin-top: 20px;
+            }
+            
+        </style>
+        
+    </head>
+
+
+
+    <body style="background-color:#0d1b2a; color:white; font-family:Segoe UI, sans-serif; zoom:80%;">
+
+    <div style="display:flex; align-items:center; gap:15px; padding:20px;">
+        <img src="/static/logo-komdigi2.png" style="height:50px;">
+        <img src="/static/djid.png" style="height:50px;">
+        <div>
+            <h2 style="margin:0;">Dashboard Realisasi Kinerja – Balmon SFR Kelas II Mataram</h2/>
+            <p style="margin:0; font-size:16px; color:#9ca3af;">One-Data Aggregation & Analytics (WANDAA)</p>
+        </div>
+        
+        <!-- Tombol + Pilih Tahun -->
+        <div style="display:flex; align-items:flex-end; gap:10px; padding:20px; justify-content:flex-end;">      
+            <!-- Tombol -->
+            <form method="POST" class="filter-form2" id="main-form">
+                <!-- Pilih Tahun -->
+                <div style="display:flex; flex-direction:column;">
+                    <select name="year" id="year" onchange="autoSubmit('year')";
+                            style="padding:10px 20px; font-size: 16px; border-radius:6px; border:none; background:#006db0; color:white;">
+                        <option value="2022" {% if selected_year == "2022" %}selected{% endif %}>TAHUN 2022</option>
+                        <option value="2023" {% if selected_year == "2023" %}selected{% endif %}>TAHUN 2023</option>
+                        <option value="2024" {% if selected_year == "2024" %}selected{% endif %}>TAHUN 2024</option>
+                        <option value="2025" {% if selected_year == "2025" %}selected{% endif %}>TAHUN 2025</option>
+                        <option value="2026" {% if selected_year == "2026" %}selected{% endif %}>TAHUN 2026</option>
+                    </select>
+                </div>
+            </form>
+            
+            <a href="{{ url_for('identifikasi') }}"
+                   style="color:white; background:#e1ae05; border:none; padding:10px 20px; font-size:16px; border-radius:6px; text-decoration:none;">
+                    Identifikasi
+                </a>
+            </a>
+            
+            <a href="{{ url_for('run_bts') }}"
+                   style="color:white; background:#e1ae05; border:none; padding:10px 20px; font-size:16px; border-radius:6px; text-decoration:none;">
+                    Prima Aksi
+                </a>
+            </a>
+
+            
+            <a href="{{ url_for('logout') }}"
+               style="color:white; background:red; border:none; padding:10px 20px; font-size: 16px; border-radius:6px;">
+                Logout
+            </a>
+        </div>
+    </div>
+        
+    
+    <!-- ================= MW-LINK ================= -->
+    <!-- Info Cards Inspeksi -->
+    <form method="POST" class="filter-form3" id="main-form">
+    <div style="display:flex; left-content:space-between; align-items:center; margin:10px 10px 10px;">
+        <img src="/static/vector.png" alt="Data" style="width:60px; height:40px;">
+        <h2 style="margin:0;">PEMERIKSAAN MICROWAVE LINK {{selected_year}}</h2>
+    </div>
+    </form>
+    <!-- Info Cards -->
+    <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:10px; padding:20px;">
+        <!-- Card 1 -->
+        <div style="background:#1e293b; padding:18px; border-radius:12px; display:flex; gap:14px; align-items:center;">
+            <div style="font-size:3rem;">🗼 {{stats.remote_site_percent}}%</div>
+            <div>
+                <h1 style="margin:0;">REMOTE SITE</h1>
+                <p style="margin:0;opacity:0.8;">{{ stats.remote_site_checked }} dari 857 ISR  telah diperiksa</p>
+            </div>
+        </div>
+        
+        <!-- Card 2 -->
+        <div style="background:#1e293b; padding:18px; border-radius:12px; display:flex; gap:14px; align-items:center;">
+            <div style="font-size:3rem;">🗼 {{stats.open_shelter_percent}}%</div>
+            <div> 
+                <h1 style="margin:0;">OPEN SHELTER</h1>
+                <p style="margin:0;opacity:0.8;">{{ stats.open_shelter_checked }} dari 188 ISR telah diperiksa</p>
+            </div>
+        </div>
+        
+        <!-- Card 3 -->
+        <div style="background:#1e293b; padding:18px; border-radius:12px; display:flex; gap:14px; align-items:center;">
+            <div style="font-size:3rem;">🗼{{ stats.non_target_checked }} ISR</div>
+            <div> 
+                <h1 style="margin:0;">NON-TARGET</h1>
+                <p style="margin:0;opacity:0.8;">telah diperiksa</p>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Charts -->
+    <div class="chart-row">
+        <div class="chart-container">{{ pie_mwlink_html|safe }}</div>
+        <div class="chart-container">{{ bar_mwlink_html|safe }}</div>
+    </div>
+
+
+    <!-- ================= DASHBOARD QOS & SPEED ================= -->
+    <form method="POST" class="filter-form3" id="main-form">
+    <div style="display:flex; left-content:space-between; align-items:center; margin:10px 10px 10px;">
+        <img src="/static/vector.png" alt="Data" style="width:60px; height:40px;">
+        <h2 style="margin:0;">KUALITAS LAYANAN JARINGAN SELULER {{selected_year}}</h2>
+    </div>
+    </form>
+    
+    <div style="
+        display:grid;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        gap:20px;
+        padding:20px;
+    ">
+    
+        <!-- CARD JUMLAH KAB/KOTA -->
+        <div style="background:#1e293b; padding:18px; border-radius:12px; display:flex; gap:14px; align-items:center;">
+            <div style="font-size:2.5rem;">📊</div>
+            <div>
+                <h1 style="margin:0;">{{ jumlah_qos }}</h1>
+                <p style="margin:0; opacity:0.8;">Kab/Kota Termonitor</p>
+            </div>
+        </div>
+    
+        <!-- CARD PERSENTASE -->
+        <div style="background:#1e293b; padding:18px; border-radius:12px; display:flex; gap:14px; align-items:center;">
+            <div style="font-size:2.5rem;">📈</div>
+            <div>
+                <h1 style="margin:0;">{{ persen_qos }}%</h1>
+                <p style="margin:0; opacity:0.8;">Cakupan Monitoring</p>
+            </div>
+        </div>
+    
+        <!-- CARD DOWNLOAD -->
+        <div style="background:#1e293b; padding:18px; border-radius:12px;">
+            <h4 style="margin-bottom:8px;">📥 Download Speed</h4>
+            <h1 id="avgDownloadText">- Mbps</h1>
+    
+            <div style="background:#334155; border-radius:6px; height:14px; width:100%; overflow:hidden;">
+                <div id="avgDownloadBar"
+                     style="height:100%; width:0%; background:linear-gradient(90deg,#ef4444,#eab308,#22c55e);">
+                </div>
+            </div>
+            <small style="opacity:0.7;">Skala hingga 100 Mbps</small>
+        </div>
+    
+        <!-- CARD UPLOAD -->
+        <div style="background:#1e293b; padding:18px; border-radius:12px;">
+            <h4 style="margin-bottom:8px;">📤 Upload Speed</h4>
+            <h1 id="avgUploadText">- Mbps</h1>
+    
+            <div style="background:#334155; border-radius:6px; height:14px; width:100%; overflow:hidden;">
+                <div id="avgUploadBar"
+                     style="height:100%; width:0%; background:linear-gradient(90deg,#ef4444,#eab308,#22c55e);">
+                </div>
+            </div>
+            <small style="opacity:0.7;">Skala hingga 100 Mbps</small>
+        </div>
+    
+        <!-- FILTER OPERATOR -->
+        <div style="background:#1e293b; padding:18px; border-radius:12px;">
+            <h4 style="margin-bottom:10px;">📡 Operator Seluler</h4>
+            <label><input type="checkbox" class="op-filter" value="Telkomsel" checked> Telkomsel</label><br>
+            <label><input type="checkbox" class="op-filter" value="Indosat" checked> Indosat</label><br>
+            <label><input type="checkbox" class="op-filter" value="XL" checked> XL</label><br>
+            <label><input type="checkbox" class="op-filter" value="Smart" checked> Smart</label>
+        </div>
+    
+    </div>
+
+    <h2 style="margin:30px 20px 10px;">🗺️ Peta Sebaran Koordinat QoS</h2>
+    
+    <div class="map-container" style="height:600px; margin:20px;">
+        <iframe
+            src="/static/{{ map_static_file }}"
+            width="100%"
+            height="100%"
+            style="border:none; border-radius:12px;">
+        </iframe>
+    </div>
+
+    
+    <script>
+    const speedData = {{ operator_speed_json | safe }};
+    
+    // batas skala (bisa diubah)
+    const MAX_DOWNLOAD = 100; // Mbps
+    const MAX_UPLOAD = 100;   // Mbps
+    
+    function updateSpeedCards() {
+        const selectedOperators = Array.from(
+            document.querySelectorAll('.op-filter:checked')
+        ).map(cb => cb.value);
+    
+        const filtered = speedData.filter(d =>
+            selectedOperators.includes(d.Operator)
+        );
+    
+        if (filtered.length === 0) {
+            document.getElementById("avgDownloadText").innerText = "- Mbps";
+            document.getElementById("avgUploadText").innerText = "- Mbps";
+            document.getElementById("avgDownloadBar").style.width = "0%";
+            document.getElementById("avgUploadBar").style.width = "0%";
+            return;
+        }
+    
+        const avgDL = filtered.reduce(
+            (s, d) => s + d["Average Speedtest Download Speed (Mbps)"], 0
+        ) / filtered.length;
+    
+        const avgUL = filtered.reduce(
+            (s, d) => s + d["Average Speedtest Upload Speed (Mbps)"], 0
+        ) / filtered.length;
+    
+        // Text
+        document.getElementById("avgDownloadText").innerText = avgDL.toFixed(2) + " Mbps";
+        document.getElementById("avgUploadText").innerText = avgUL.toFixed(2) + " Mbps";
+    
+        // Bar scale (%)
+        const dlPercent = Math.min((avgDL / MAX_DOWNLOAD) * 100, 100);
+        const ulPercent = Math.min((avgUL / MAX_UPLOAD) * 100, 100);
+    
+        document.getElementById("avgDownloadBar").style.width = dlPercent + "%";
+        document.getElementById("avgUploadBar").style.width = ulPercent + "%";
+    }
+    
+    // event listener
+    document.querySelectorAll('.op-filter').forEach(cb =>
+        cb.addEventListener('change', updateSpeedCards)
+    );
+    
+    // init
+    updateSpeedCards();
+    </script>
+    
+    <script>
+    window.addEventListener("load", function () {
+        setTimeout(function () {
+            const charts = document.querySelectorAll(".plotly-graph-div");
+            charts.forEach(chart => {
+                if (window.Plotly) {
+                    Plotly.Plots.resize(chart);
+                }
+            });
+        }, 500); // beri delay agar flex layout selesai dulu
+    });
+    </script>
+
+    </body>
+    
+    <!-- Loading Overlay -->
+    <div id="loading-overlay"
+         style="
+            display:none;
+            position:fixed;
+            top:0; left:0;
+            width:100%; height:100%;
+            background:rgba(0,0,0,0.6);
+            z-index:9999;
+            align-items:center;
+            justify-content:center;
+            color:white;
+            font-size:18px;
+         ">
+    
+        <div style="background:#1e1e1e; padding:30px 40px; border-radius:10px; text-align:center;">
+    
+            <!-- SPINNER DI SINI -->
+            <div style="
+                border:4px solid #444;
+                border-top:4px solid #00aaff;
+                border-radius:50%;
+                width:40px;
+                height:40px;
+                animation:spin 1s linear infinite;
+                margin:0 auto 15px;
+            "></div>
+    
+            <strong>Sedang proses</strong><br>
+            <span style="font-size:14px;">Mohon tunggu sebentar...</span>
+        </div>
+    </div>
+    
+    <style>
+    @keyframes spin {
+        0%   { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+    </style>
+
+    
+    <script>
+    function autoSubmit() {
+        const overlay = document.getElementById("loading-overlay");
+        overlay.style.display = "flex";
+        document.getElementById("main-form").submit();
+    }
+    </script>
+
+    </html>
+    ''',
+    jumlah_qos=jumlah_qos,
+    persen_qos=persen_qos,
+    map_static_file=map_static_file,
+    operator_speed_json=json.dumps(operator_speed_json),
+    stats=stats,
+    pie_mwlink_html=pie_mwlink_html,
+    bar_mwlink_html=bar_mwlink_html,
     )
     
 @app.route("/get_kab/<spt>")
