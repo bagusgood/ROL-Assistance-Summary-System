@@ -3409,7 +3409,7 @@ def index():
     
     # 2. Persentase APT bersertifikat
     total = len(df_apt)
-    bersertifikat = df_apt[df_apt['status_sertifikasi'] == 'Bersertifikat'].shape[0]
+    bersertifikat = df_apt[df_apt['status_sertifikasi'] == 'has_certificate'].shape[0]
     persen_sertifikat = round((bersertifikat / total) * 100 if total > 0 else 0,2)
     
     # 3. Persentase Kab/Kota termonitor (unik dibagi 10)
@@ -5003,6 +5003,15 @@ def index():
             <div> 
                 <h1 style="margin:0;">{{persen_kab_kota}}%</h1>
                 <p style="margin:0;opacity:0.8;">Kab/Kota Termonitor</p>
+            </div>
+        </div>
+        
+        <!-- Card 4 -->
+        <div style="background:#1e293b; padding:18px; border-radius:12px; display:flex; gap:14px; align-items:center;">
+            <div style="font-size:3rem;">📻</div>
+            <div> 
+                <h1 style="margin:0;">100%</h1>
+                <p style="margin:0;opacity:0.8;">Kepatuhan APT</p>
             </div>
         </div>
     </div>
