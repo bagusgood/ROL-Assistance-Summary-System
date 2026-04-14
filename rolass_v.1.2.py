@@ -2471,6 +2471,11 @@ def load_mwlink():
 
     return df
 
+def load_apt_csv():
+    url = "https://docs.google.com/spreadsheets/d/1pZWQBwqP-OWLhzFD9c2w8DMNoZz51f2P1BDoMSyj4qc/export?format=csv&gid=0"
+    df = pd.read_csv(url)
+    return df
+
 def load_apt():
     # =========================
     # 1) KONFIGURASI
@@ -3397,7 +3402,7 @@ def download_excel():
 @login_required
 def index():
     # === Load APT ===
-    df_apt = load_apt()
+    df_apt = load_apt_csv()
     
     # 1. Jumlah APT termonitor (jumlah baris / kolom no)
     jumlah_apt = df_apt['no'].count()
