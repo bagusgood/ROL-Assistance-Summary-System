@@ -3517,19 +3517,6 @@ def index():
         <!-- Tombol + Pilih Tahun -->
         <div style="display:flex; align-items:flex-end; gap:10px; padding:20px; justify-content:flex-end;">      
             <!-- Tombol -->
-            <form method="POST" class="filter-form2" id="main-form">
-                <!-- Pilih Tahun -->
-                <div style="display:flex; flex-direction:column;">
-                    <select name="year" id="year" onchange="autoSubmit('year')";
-                            style="padding:10px 20px; font-size: 16px; border-radius:6px; border:none; background:#006db0; color:white;">
-                        <option value="2022" {% if selected_year == "2022" %}selected{% endif %}>TAHUN 2022</option>
-                        <option value="2023" {% if selected_year == "2023" %}selected{% endif %}>TAHUN 2023</option>
-                        <option value="2024" {% if selected_year == "2024" %}selected{% endif %}>TAHUN 2024</option>
-                        <option value="2025" {% if selected_year == "2025" %}selected{% endif %}>TAHUN 2025</option>
-                        <option value="2026" {% if selected_year == "2026" %}selected{% endif %}>TAHUN 2026</option>
-                    </select>
-                </div>
-            </form>
             
             <a href="{{ url_for('identifikasi') }}"
                    style="color:white; background:#e1ae05; border:none; padding:10px 20px; font-size:16px; border-radius:6px; text-decoration:none;">
@@ -5623,20 +5610,6 @@ def klid():
         <!-- Tombol + Pilih Tahun -->
         <div style="display:flex; align-items:flex-end; gap:10px; padding:20px; justify-content:flex-end;">      
             <!-- Tombol -->
-            <form method="POST" class="filter-form2" id="main-form">
-                <!-- Pilih Tahun -->
-                <div style="display:flex; flex-direction:column;">
-                    <select name="year" id="year" onchange="autoSubmit('year')";
-                            style="padding:10px 20px; font-size: 16px; border-radius:6px; border:none; background:#006db0; color:white;">
-                        <option value="2022" {% if selected_year == "2022" %}selected{% endif %}>TAHUN 2022</option>
-                        <option value="2023" {% if selected_year == "2023" %}selected{% endif %}>TAHUN 2023</option>
-                        <option value="2024" {% if selected_year == "2024" %}selected{% endif %}>TAHUN 2024</option>
-                        <option value="2025" {% if selected_year == "2025" %}selected{% endif %}>TAHUN 2025</option>
-                        <option value="2026" {% if selected_year == "2026" %}selected{% endif %}>TAHUN 2026</option>
-                    </select>
-                </div>
-            </form>
-            
             <a href="{{ url_for('identifikasi') }}"
                    style="color:white; background:#e1ae05; border:none; padding:10px 20px; font-size:16px; border-radius:6px; text-decoration:none;">
                     Identifikasi
@@ -5663,7 +5636,7 @@ def klid():
     <form method="POST" class="filter-form3" id="main-form">
     <div style="display:flex; left-content:space-between; align-items:center; margin:10px 10px 10px;">
         <img src="/static/vector.png" alt="Data" style="width:60px; height:40px;">
-        <h2 style="margin:0;">PEMERIKSAAN MICROWAVE LINK {{selected_year}}</h2>
+        <h2 style="margin:0;">PEMERIKSAAN MICROWAVE LINK 2026{{selected_year}}</h2>
     </div>
     </form>
     <!-- Info Cards -->
@@ -5707,7 +5680,7 @@ def klid():
     <form method="POST" class="filter-form3" id="main-form">
     <div style="display:flex; left-content:space-between; align-items:center; margin:10px 10px 10px;">
         <img src="/static/vector.png" alt="Data" style="width:60px; height:40px;">
-        <h2 style="margin:0;">KUALITAS LAYANAN JARINGAN SELULER {{selected_year}}</h2>
+        <h2 style="margin:0;">KUALITAS LAYANAN JARINGAN SELULER 2026</h2>
     </div>
     </form>
     
@@ -5773,7 +5746,7 @@ def klid():
     
     </div>
 
-    <h2 style="margin:30px 20px 10px;">🗺️ Peta Sebaran Koordinat QoS</h2>
+    <h2 style="margin:30px 20px 10px;">🗺️ SEBARAN KOORDINAT POI QOS</h2>
     
     <div class="map-container" style="height:600px; margin:20px;">
         <iframe
