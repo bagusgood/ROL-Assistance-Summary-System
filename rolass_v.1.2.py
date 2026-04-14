@@ -4978,7 +4978,7 @@ def index():
     </div>
     </form>
     <!-- Info Cards -->
-    <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:10px; padding:20px;">
+    <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap:10px; padding:20px;">
         <!-- Card 1 -->
         <div style="background:#1e293b; padding:18px; border-radius:12px; display:flex; gap:14px; align-items:center;">
             <div style="font-size:3rem;">📻</div>
@@ -4990,7 +4990,7 @@ def index():
         
         <!-- Card 2 -->
         <div style="background:#1e293b; padding:18px; border-radius:12px; display:flex; gap:14px; align-items:center;">
-            <div style="font-size:3rem;">📻</div>
+            <div style="font-size:3rem;">📋</div>
             <div> 
                 <h1 style="margin:0;">{{persen_sertifikat}}%</h1>
                 <p style="margin:0;opacity:0.8;">APT tersertifikasi</p>
@@ -4999,19 +4999,19 @@ def index():
         
         <!-- Card 3 -->
         <div style="background:#1e293b; padding:18px; border-radius:12px; display:flex; gap:14px; align-items:center;">
-            <div style="font-size:3rem;">📻</div>
-            <div> 
-                <h1 style="margin:0;">{{persen_kab_kota}}%</h1>
-                <p style="margin:0;opacity:0.8;">Kab/Kota Termonitor</p>
-            </div>
-        </div>
-        
-        <!-- Card 4 -->
-        <div style="background:#1e293b; padding:18px; border-radius:12px; display:flex; gap:14px; align-items:center;">
-            <div style="font-size:3rem;">📻</div>
+            <div style="font-size:3rem;">🏛️</div>
             <div> 
                 <h1 style="margin:0;">100%</h1>
                 <p style="margin:0;opacity:0.8;">Kepatuhan APT</p>
+            </div>
+        </div>
+                
+        <!-- Card 4 -->
+        <div style="background:#1e293b; padding:18px; border-radius:12px; display:flex; gap:14px; align-items:center;">
+            <div style="font-size:3rem;">📍</div>
+            <div> 
+                <h1 style="margin:0;">{{persen_kab_kota}}%</h1>
+                <p style="margin:0;opacity:0.8;">Kab/Kota Termonitor</p>
             </div>
         </div>
     </div>
