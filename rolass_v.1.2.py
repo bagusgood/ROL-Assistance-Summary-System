@@ -2471,6 +2471,127 @@ def load_mwlink():
 
     return df
 
+def load_apt():
+    # =========================
+    # 1) KONFIGURASI
+    # =========================
+    url = "https://smart.postel.go.id/report/preview"
+
+    payload = {
+        "report_type": "output",
+        "upt": "20",
+        "tgl_1": "2026-01-01",
+        "tgl_2": "2027-01-01"
+    }
+
+    headers = {
+        "Accept": "application/json, text/javascript, */*; q=0.01",
+        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+        "Origin": "https://smart.postel.go.id",
+        "Referer": "https://smart.postel.go.id/",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36 Edg/146.0.0.0",
+        "X-Requested-With": "XMLHttpRequest"
+    }
+
+    # PASTE COOKIE DARI BROWSER
+    cookies = {
+        "_ga": "GA1.1.811209475.1765936658",
+        "_ga_G86CWBQFF8": "GS2.1.s1775789085$o3$g1$t1775789149$j60$l0$h0",
+        "_ga_5GQYGHWD1N": "GS2.1.s1775781486$o8$g0$t1775781486$j60$l0$h1361923586",
+        "ci_session": "acghcnq22pl8f2nicqtraktr1egpaifd"
+    }
+
+    # =========================
+    # 2) REQUEST
+    # =========================
+    session = requests.Session()
+    response = session.post(url, headers=headers, data=payload, cookies=cookies, timeout=60)
+
+    print("Status Code:", response.status_code)
+    print("Content-Type:", response.headers.get("Content-Type"))
+
+    # Debug jika gagal JSON
+    try:
+        json_data = response.json()
+    except Exception as e:
+        print("Gagal parse JSON. Response awal:")
+        print(response.text[:1000])
+        raise e
+
+    # =========================
+    # 3) AMBIL DATA
+    # =========================
+    rows = json_data.get("data", [])
+
+    print("Jumlah baris:", len(rows))
+
+    if not rows:
+        print("Data kosong. Cek cookie/session login atau parameter payload.")
+        df = pd.DataFrame()
+    else:
+        # =========================
+        # 4) NAMA KOLOM
+        # =========================
+        columns = [
+            "no",
+            "balai_monitor",
+            "nomor_surat",
+            "tgl_mulai",
+            "tgl_selesai",
+            "nama_entitas",
+            "alamat",
+            "kab_kota",
+            "provinsi",
+            "latitude",
+            "longitude",
+            "jenis_lokasi",
+            "nama_perangkat",
+            "kategori_perangkat",
+            "merek",
+            "model",
+            "nomor_sertifikat",
+            "id_pemohon",
+            "nama_pemohon",
+            "status_sertifikasi",
+            "indikasi_pelanggaran",
+            "nomor_surat_duplikat",
+            "tgl_pemeriksaan",
+            "kolom_23",
+            "kolom_24",
+            "kolom_25",
+            "kolom_26",
+            "kolom_27",
+            "kolom_28",
+            "kolom_29"
+        ]
+
+        # Antisipasi jika jumlah kolom berubah
+        max_len = max(len(r) for r in rows)
+
+        if len(columns) < max_len:
+            for i in range(len(columns), max_len):
+                columns.append(f"extra_col_{i+1}")
+        elif len(columns) > max_len:
+            columns = columns[:max_len]
+
+        # Samakan panjang setiap row
+        normalized_rows = []
+        for r in rows:
+            if len(r) < max_len:
+                r = r + [None] * (max_len - len(r))
+            normalized_rows.append(r)
+
+        df = pd.DataFrame(normalized_rows, columns=columns)
+
+        # =========================
+        # 5) BERSIHKAN DATA
+        # =========================
+        # Ubah kolom koordinat ke numeric jika memungkinkan
+        for col in ["latitude", "longitude"]:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors="coerce")
+
+    return df
 
 def get_invoice_session():
     """
@@ -3275,6 +3396,21 @@ def download_excel():
 @app.route("/", methods=["GET", "POST"])
 @login_required
 def index():
+    # === Load APT ===
+    df_apt = load_apt()
+    
+    # 1. Jumlah APT termonitor (jumlah baris / kolom no)
+    jumlah_apt = df_apt['no'].count()
+    
+    # 2. Persentase APT bersertifikat
+    total = len(df_apt)
+    bersertifikat = df_apt[df_apt['status_sertifikasi'] == 'Bersertifikat'].shape[0]
+    persen_sertifikat = round((bersertifikat / total) * 100 if total > 0 else 0,2)
+    
+    # 3. Persentase Kab/Kota termonitor (unik dibagi 10)
+    jumlah_kab_kota = df_apt['kab_kota'].nunique()
+    persen_kab_kota = round((jumlah_kab_kota / 10) * 100,2)
+        
     # === Load MWLink ===
     df_mwlink = load_mwlink()
     
@@ -3310,6 +3446,126 @@ def index():
         "#6d98b3", "#91cfe3", "#af8703", "#a83639", "#575759", "#252526",
         "#044065", "#d5ad2b", "#884a4c"
     ]
+    
+    # =========================
+    # CHART APT
+    # =========================
+    def wrap_text(text, max_len=50):
+        words = text.split()
+        lines = []
+        current = ""
+    
+        for w in words:
+            if len(current + " " + w) <= max_len:
+                current += " " + w if current else w
+            else:
+                lines.append(current)
+                current = w
+        if current:
+            lines.append(current)
+    
+        return "<br>".join(lines)
+    
+    
+    bar_kategori = (
+        df_apt.groupby(["kategori_perangkat"])
+        .size()
+        .reset_index(name="jumlah")
+        .sort_values(by="jumlah", ascending=False)
+    )
+    bar_kategori["kategori_wrapped"] = bar_kategori["kategori_perangkat"].apply(wrap_text)
+    
+    total_kategori = (
+        df_apt.groupby("kategori_perangkat")
+        .size()
+        .sort_values(ascending=False)
+    )
+    
+    ordered_kategori = total_kategori.index.tolist()
+    
+    bar1_kategori = px.bar(
+        bar_kategori,
+        y="kategori_wrapped",   # pindah ke Y
+        x="jumlah",
+        orientation='h',
+        title="JUMLAH PER KATEGORI PERANGKAT",
+        labels={
+            "kategori_perangkat": "",
+            "jumlah": "Jumlah Data"
+        },
+        category_orders={
+            "kategori_wrapped": bar_kategori["kategori_wrapped"].tolist()
+        }
+    )
+    
+    bar1_kategori.update_layout(
+        barmode='group',
+        uniformtext_minsize=10,
+        uniformtext_mode='hide',
+        bargap=0.2,
+        plot_bgcolor='#0f172a',
+        paper_bgcolor='#0f172a',
+        font=dict(color='white'),
+        xaxis_tickangle=0,  # lurus (karena sudah 2 baris)
+        xaxis=dict(
+            tickfont=dict(size=10)
+        ),
+        yaxis=dict(
+            tickfont=dict(size=9),
+            automargin=True
+        ),
+        margin=dict(b=20)
+    )   
+    
+    df_apt['tgl_pemeriksaan'] = pd.to_datetime(
+        df_apt['tgl_pemeriksaan'],
+        dayfirst=True,
+        errors='coerce'
+    )
+    
+    df_apt['bulan'] = df_apt['tgl_pemeriksaan'].dt.strftime('%Y-%m')
+    
+    # =========================
+    # BAR per bulan
+    # =========================
+    bar_bulanan = (
+        df_apt.groupby(["bulan"])
+        .size()
+        .reset_index(name="jumlah")
+        .sort_values(by="bulan")
+    )
+    
+    total_bulan = (
+        df_apt.groupby("bulan")
+        .size()
+        .sort_index()
+    )
+    
+    ordered_bulan = total_bulan.index.tolist()
+    
+    bar1_bulanan = px.bar(
+        bar_bulanan,
+        x="bulan",
+        y="jumlah",
+        orientation='v',
+        title="JUMLAH APT PER BULAN",
+        labels={
+            "bulan": "",
+            "jumlah": "Jumlah APT"
+        },
+        category_orders={"bulan": ordered_bulan}
+    )
+    
+    bar1_bulanan.update_layout(
+        barmode='group',
+        uniformtext_minsize=10,
+        uniformtext_mode='hide',
+        bargap=0.2,
+        plot_bgcolor='#0f172a',
+        paper_bgcolor='#0f172a',
+        font=dict(color='white'),
+        xaxis_tickangle=-45
+    )
     
     # =========================
     # CHART MWLINK
@@ -3868,6 +4124,9 @@ def index():
     
     pie_mwlink_html = pio.to_html(pie_mwlink, full_html=False, include_plotlyjs='cdn')
     bar_mwlink_html = pio.to_html(bar1_mwlink, full_html=False, include_plotlyjs=False)
+    
+    bar_kategori_html = pio.to_html(bar1_kategori, full_html=False, include_plotlyjs=False)
+    bar_bulanan_html = pio.to_html(bar1_bulanan, full_html=False, include_plotlyjs=False)
     
     bar_data = df_pantib.groupby("penertiban_service_name").size().reset_index(name="jumlah")
 
@@ -4705,6 +4964,49 @@ def index():
         </div>
     </div>
 
+    <!-- ================= APT ================= -->
+    <!-- Info Cards APT -->
+    <form method="POST" class="filter-form3" id="main-form">
+    <div style="display:flex; left-content:space-between; align-items:center; margin:10px 10px 10px;">
+        <img src="/static/vector.png" alt="Data" style="width:60px; height:40px;">
+        <h2 style="margin:0;">MONITORING APT {{selected_year}}</h2>
+    </div>
+    </form>
+    <!-- Info Cards -->
+    <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:10px; padding:20px;">
+        <!-- Card 1 -->
+        <div style="background:#1e293b; padding:18px; border-radius:12px; display:flex; gap:14px; align-items:center;">
+            <div style="font-size:3rem;">📻</div>
+            <div>
+                <h1 style="margin:0;">{{jumlah_apt}}</h1>
+                <p style="margin:0;opacity:0.8;"> APT termonitor</p>
+            </div>
+        </div>
+        
+        <!-- Card 2 -->
+        <div style="background:#1e293b; padding:18px; border-radius:12px; display:flex; gap:14px; align-items:center;">
+            <div style="font-size:3rem;">📻</div>
+            <div> 
+                <h1 style="margin:0;">{{persen_sertifikat}}%</h1>
+                <p style="margin:0;opacity:0.8;">APT tersertifikasi</p>
+            </div>
+        </div>
+        
+        <!-- Card 3 -->
+        <div style="background:#1e293b; padding:18px; border-radius:12px; display:flex; gap:14px; align-items:center;">
+            <div style="font-size:3rem;">📻</div>
+            <div> 
+                <h1 style="margin:0;">{{persen_kab_kota}}%</h1>
+                <p style="margin:0;opacity:0.8;">Kab/Kota Termonitor</p>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Charts -->
+    <div class="chart-row">
+        <div class="chart-container">{{ bar_kategori_html|safe }}</div>
+        <div class="chart-container">{{ bar_bulanan_html|safe }}</div>
+    </div>
 
     <!-- ================= MW-LINK ================= -->
     <!-- Info Cards Inspeksi -->
@@ -5013,7 +5315,12 @@ def index():
     bar1_pita_html=bar1_pita_html,
     stats=stats,
     pie_mwlink_html=pie_mwlink_html,
-    bar_mwlink_html=bar_mwlink_html
+    bar_mwlink_html=bar_mwlink_html,
+    jumlah_apt = jumlah_apt,
+    persen_sertifikat=persen_sertifikat,
+    persen_kab_kota=persen_kab_kota,
+    bar_kategori_html=bar_kategori_html,
+    bar_bulanan_html=bar_bulanan_html
     )
     
 @app.route("/get_kab/<spt>")
