@@ -2083,13 +2083,13 @@ def login_required(f):
 
 # Ambil data dari API / Google Sheet / CSV
 def load_map_data():
-    sheet_id = "14rFJPrA2fCVkz-7mQoLQ8khV5nLlsKVv"
-    gid = "301785538"
-
-    url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}"
+    sheet_id_qos = "1rsq6jkSZh1dnzqFg43Bx6-hzJcxjo4Y-"
+    gid_qos = "259936036"
+    
+    url_qos = f"https://docs.google.com/spreadsheets/d/{sheet_id_qos}/export?format=csv&gid={gid_qos}"
 
     # Ambil data ke DataFrame
-    df_map = pd.read_csv(url, header=1)
+    df_map = pd.read_csv(url_qos, header=1)
     return df_map
 
 def generate_map_html_from_df(df_map, out_filename="map_folium.html"):
@@ -2122,8 +2122,8 @@ def generate_map_html_from_df(df_map, out_filename="map_folium.html"):
     for i, row in df_valid.iterrows():
 
         # Ambil nilai Speedtest
-        dl = row.get("Average Speedtest Download Speed (Mbps)", "N/A")
-        ul = row.get("Average Speedtest Upload Speed (Mbps)", "N/A")
+        dl = row.get("Average Speed Test DL Speed (Mbps)", "N/A")
+        ul = row.get("Average Speed Test UL Speed (Mbps)", "N/A")
 
         # Ambil nama kab/kota
         kabkot = row.get("Kabupaten / Kota", "Tidak diketahui")
@@ -5129,11 +5129,11 @@ def montib():
         }
     
         const avgDL = filtered.reduce(
-            (s, d) => s + d["Average Speedtest Download Speed (Mbps)"], 0
+            (s, d) => s + d["Average Speed Test DL Speed (Mbps)"], 0
         ) / filtered.length;
     
         const avgUL = filtered.reduce(
-            (s, d) => s + d["Average Speedtest Upload Speed (Mbps)"], 0
+            (s, d) => s + d["Average Speed Test UL Speed (Mbps)"], 0
         ) / filtered.length;
     
         // Text
@@ -5374,8 +5374,8 @@ def klid():
     
 
     # URL Google Sheet (ubah ke format export CSV)
-    sheet_id_qos = "14rFJPrA2fCVkz-7mQoLQ8khV5nLlsKVv"
-    gid_qos = "301785538"
+    sheet_id_qos = "1rsq6jkSZh1dnzqFg43Bx6-hzJcxjo4Y-"
+    gid_qos = "259936036"
     
     url_qos = f"https://docs.google.com/spreadsheets/d/{sheet_id_qos}/export?format=csv&gid={gid_qos}"
     
@@ -5393,8 +5393,8 @@ def klid():
     # =========================
     
     speed_cols = [
-        "Average Speedtest Download Speed (Mbps)",
-        "Average Speedtest Upload Speed (Mbps)"
+        "Average Speed Test DL Speed (Mbps)",
+        "Average Speed Test UL Speed (Mbps)"
     ]
     
     # Paksa konversi ke numeric (non-angka → NaN)
@@ -5411,16 +5411,16 @@ def klid():
     operator_speed_df = df_map.dropna(
         subset=[
             "Operator",
-            "Average Speedtest Download Speed (Mbps)",
-            "Average Speedtest Upload Speed (Mbps)"
+            "Average Speed Test DL Speed (Mbps)",
+            "Average Speed Test UL Speed (Mbps)"
         ]
     )
     
     # Ambil kolom yang dibutuhkan saja
     operator_speed_df = operator_speed_df[[
         "Operator",
-        "Average Speedtest Download Speed (Mbps)",
-        "Average Speedtest Upload Speed (Mbps)"
+        "Average Speed Test DL Speed (Mbps)",
+        "Average Speed Test UL Speed (Mbps)"
     ]]
     
     # Convert ke JSON
@@ -5783,11 +5783,11 @@ def klid():
         }
     
         const avgDL = filtered.reduce(
-            (s, d) => s + d["Average Speedtest Download Speed (Mbps)"], 0
+            (s, d) => s + d["Average Speed Test DL Speed (Mbps)"], 0
         ) / filtered.length;
     
         const avgUL = filtered.reduce(
-            (s, d) => s + d["Average Speedtest Upload Speed (Mbps)"], 0
+            (s, d) => s + d["Average Speed Test UL Speed (Mbps)"], 0
         ) / filtered.length;
     
         // Text
