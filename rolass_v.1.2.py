@@ -5738,10 +5738,9 @@ def klid():
         <!-- FILTER OPERATOR -->
         <div style="background:#1e293b; padding:18px; border-radius:12px;">
             <h4 style="margin-bottom:10px;">📡 Operator Seluler</h4>
-            <label><input type="checkbox" class="op-filter" value="Telkomsel" checked> Telkomsel</label><br>
-            <label><input type="checkbox" class="op-filter" value="Indosat" checked> Indosat</label><br>
-            <label><input type="checkbox" class="op-filter" value="XL" checked> XL</label><br>
-            <label><input type="checkbox" class="op-filter" value="Smart" checked> Smart</label>
+            <label><input type="checkbox" class="op-filter" value="TSEL" checked> TSEL</label><br>
+            <label><input type="checkbox" class="op-filter" value="IOH" checked> IOH</label><br>
+            <label><input type="checkbox" class="op-filter" value="XLS" checked> XLS</label><br>
         </div>
     
     </div>
